@@ -6,6 +6,7 @@ import 'device_scanner_screen.dart';
 import 'active_session_screen.dart';
 import 'settings_screen.dart';
 import 'history_screen.dart';
+import 'plan_list_screen.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -175,7 +176,20 @@ class _PlanCard extends StatelessWidget {
           loading: () => const Text('Loading plans...'),
           error: (_, _) => const Text('No plans'),
         ),
-        trailing: const Icon(Icons.chevron_right),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.edit_note),
+              tooltip: 'Manage plans',
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const PlanListScreen()),
+              ).then((_) => ref.invalidate(planListProvider)),
+            ),
+            const Icon(Icons.chevron_right),
+          ],
+        ),
         onTap: () => _showPlanPicker(context),
       ),
     );
@@ -191,7 +205,7 @@ class _PlanCard extends StatelessWidget {
           title: Text(list[i]),
           selected: list[i] == selectedPlan,
           onTap: () {
-            ref.read(selectedPlanNameProvider.notifier).state = list[i];
+            ref.read(selectedPlanNameProvider.notifier).select(list[i]);
             Navigator.pop(context);
           },
         ),

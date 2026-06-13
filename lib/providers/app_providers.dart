@@ -11,9 +11,28 @@ final planListProvider = FutureProvider<List<String>>((ref) async {
   return PlanService.listPlanNames();
 });
 
-final selectedPlanNameProvider = StateProvider<String>((ref) {
-  return 'default';
-});
+class SelectedPlanNotifier extends Notifier<String> {
+  @override
+  String build() {
+    _initFromConfig();
+    return 'default';
+  }
+
+  Future<void> _initFromConfig() async {
+    final config = await ref.read(configProvider.future);
+    state = config.selectedPlan;
+  }
+
+  Future<void> select(String name) async {
+    state = name;
+    final config = await ref.read(configProvider.future);
+    await config.saveSelectedPlan(name);
+  }
+}
+
+final selectedPlanNameProvider = NotifierProvider<SelectedPlanNotifier, String>(
+  SelectedPlanNotifier.new,
+);
 
 final planProvider = FutureProvider.family<List<TrainingStage>, String>((ref, name) async {
   return PlanService.loadPlan(name);

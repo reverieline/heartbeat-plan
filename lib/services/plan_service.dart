@@ -52,6 +52,11 @@ class PlanService {
     if (await file.exists()) await file.delete();
   }
 
+  static Future<bool> planExists(String name) async {
+    final dir = await _plansDir();
+    return File('${dir.path}/$name.json').exists();
+  }
+
   static List<TrainingStage> _defaultPlan() => [
         const TrainingStage(
           name: 'Warmup',
