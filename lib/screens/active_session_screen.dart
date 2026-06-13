@@ -29,6 +29,8 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
   String? _error;
   int _elapsed = 0;
   SessionState _sessionState = SessionState.idle;
+  bool _ttsEnabled = true;
+  bool _beepsEnabled = true;
 
   StreamSubscription<HeartRateData>? _hrSub;
   StreamSubscription<bool>? _connSub;
@@ -89,6 +91,8 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
         _connected = true;
         _initializing = false;
         _sessionState = SessionState.running;
+        _ttsEnabled = _audio.ttsEnabled;
+        _beepsEnabled = _audio.beepsEnabled;
       });
     } catch (e) {
       setState(() { _error = e.toString(); _initializing = false; });
@@ -212,8 +216,8 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
           padding: const EdgeInsets.all(24),
           child: Column(
             children: [
-              Text('Total: ${_formatTime(_elapsed)}',
-                  style: Theme.of(context).textTheme.titleMedium),
+              Text(_formatTime(_elapsed),
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(fontSize: 48)),
               const SizedBox(height: 32),
               _BpmDisplay(bpm: _bpm, target: stage.target, dimmed: isPaused),
               const SizedBox(height: 32),
@@ -221,6 +225,7 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
                 stage: stage,
                 elapsed: _trainer.stageElapsedSeconds,
                 progress: stageProgress,
+                target: stage.target,
               ),
               const SizedBox(height: 32),
               SizedBox(
@@ -237,11 +242,33 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
                         label: const Text('Pause'),
                       ),
               ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  IconButton(
+                    icon: Icon(_beepsEnabled ? Icons.music_note : Icons.music_off),
+                    tooltip: _beepsEnabled ? 'Mute beeps' : 'Unmute beeps',
+                    onPressed: () => setState(() {
+                      _beepsEnabled = !_beepsEnabled;
+                      _audio.beepsEnabled = _beepsEnabled;
+                    }),
+                  ),
+                  IconButton(
+                    icon: Icon(_ttsEnabled ? Icons.record_voice_over : Icons.voice_over_off),
+                    tooltip: _ttsEnabled ? 'Mute voice' : 'Unmute voice',
+                    onPressed: () => setState(() {
+                      _ttsEnabled = !_ttsEnabled;
+                      _audio.ttsEnabled = _ttsEnabled;
+                    }),
+                  ),
+                ],
+              ),
             ],
           ),
-        )),
+        ),
       ),
-    );
+    ),
+  );
   }
 }
 
@@ -259,14 +286,7 @@ class _BpmDisplay extends StatelessWidget {
     if (target.isBelow(bpm)) color = Colors.blue;
     if (dimmed) color = color.withValues(alpha: 0.4);
 
-    return Column(
-      children: [
-        Text('$bpm', style: TextStyle(fontSize: 96, fontWeight: FontWeight.bold, color: color)),
-        Text('bpm', style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: 8),
-        Text(target.label, style: Theme.of(context).textTheme.bodyLarge),
-      ],
-    );
+    return Text('$bpm', style: TextStyle(fontSize: 96, fontWeight: FontWeight.bold, color: color));
   }
 }
 
@@ -274,8 +294,9 @@ class _StageCard extends StatelessWidget {
   final TrainingStage stage;
   final int elapsed;
   final double progress;
+  final StageTarget target;
 
-  const _StageCard({required this.stage, required this.elapsed, required this.progress});
+  const _StageCard({required this.stage, required this.elapsed, required this.progress, required this.target});
 
   String _fmt(int s) {
     final m = s ~/ 60;
@@ -292,6 +313,8 @@ class _StageCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(stage.name, style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 4),
+            Text(target.label, style: Theme.of(context).textTheme.bodyMedium),
             const SizedBox(height: 8),
             LinearProgressIndicator(value: progress.clamp(0.0, 1.0), minHeight: 8),
             const SizedBox(height: 8),
