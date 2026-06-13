@@ -46,7 +46,15 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
       final config = await ref.read(configProvider.future);
       final planName = ref.read(selectedPlanNameProvider);
       final stages = await ref.read(planProvider(planName).future);
-      _audio = AudioService(ttsEnabled: config.ttsEnabled);
+      _audio = AudioService(
+        ttsEnabled: config.ttsEnabled,
+        beepsEnabled: config.beepsEnabled,
+        ttsVoice: config.ttsVoiceName != null
+            ? {'name': config.ttsVoiceName!, 'locale': config.ttsVoiceLocale ?? ''}
+            : null,
+        ttsSpeed: config.ttsSpeed,
+        ttsPitch: config.ttsPitch,
+      );
       _trainer = TrainingService(
         stages: stages,
         audio: _audio,
