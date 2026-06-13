@@ -68,7 +68,9 @@ class _DeviceScannerScreenState extends ConsumerState<DeviceScannerScreen> {
             IconButton(icon: const Icon(Icons.refresh), onPressed: _startScan),
         ],
       ),
-      body: _error != null
+      body: SafeArea(
+        top: false,
+        child: _error != null
           ? Center(child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -91,6 +93,7 @@ class _DeviceScannerScreenState extends ConsumerState<DeviceScannerScreen> {
                     );
                   },
                 ),
+      ),
     );
   }
 }

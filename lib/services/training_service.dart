@@ -49,6 +49,27 @@ class TrainingService {
     _ticker = Timer.periodic(const Duration(seconds: 1), _onTick);
   }
 
+  Future<void> pause() async {
+    if (_state != SessionState.running) return;
+    _ticker?.cancel();
+    _ticker = null;
+    _state = SessionState.paused;
+    _stateController.add(_state);
+    _log.add(LogEvent(timestamp: DateTime.now(), kind: LogEventKind.sessionPaused));
+    await audio.stop();
+    audio.speak('Training paused');
+  }
+
+  void resume() {
+    if (_state != SessionState.paused) return;
+    _state = SessionState.running;
+    _stateController.add(_state);
+    _log.add(LogEvent(timestamp: DateTime.now(), kind: LogEventKind.sessionResumed));
+    _lastCueTime = null;
+    _announceStage();
+    _ticker = Timer.periodic(const Duration(seconds: 1), _onTick);
+  }
+
   void handleBpm(int bpm) {
     if (_state != SessionState.running) return;
     _log.add(LogEvent(timestamp: DateTime.now(), kind: LogEventKind.bpm, bpm: bpm));

@@ -9,6 +9,8 @@ enum LogEventKind {
   batteryLevel,
   sessionStart,
   sessionEnd,
+  sessionPaused,
+  sessionResumed,
 }
 
 class LogEvent {
@@ -72,6 +74,10 @@ class SessionLog {
           buf.writeln('$ts session_start');
         case LogEventKind.sessionEnd:
           buf.writeln('$ts session_end');
+        case LogEventKind.sessionPaused:
+          buf.writeln('$ts session_paused');
+        case LogEventKind.sessionResumed:
+          buf.writeln('$ts session_resumed');
       }
     }
     return buf.toString();

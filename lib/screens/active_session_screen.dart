@@ -19,7 +19,6 @@ class ActiveSessionScreen extends ConsumerStatefulWidget {
 }
 
 class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
-  // BleService is obtained from the global provider — not owned here.
   BleService? _ble;
   late TrainingService _trainer;
   late AudioService _audio;
@@ -29,6 +28,7 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
   bool _initializing = true;
   String? _error;
   int _elapsed = 0;
+  SessionState _sessionState = SessionState.idle;
 
   StreamSubscription<HeartRateData>? _hrSub;
   StreamSubscription<bool>? _connSub;
@@ -61,8 +61,6 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
         beepCooldownSeconds: config.beepCooldownSeconds,
       );
 
-      // Reuse the connection already established (or being established) by
-      // the global provider — avoids a second concurrent scan.
       await ref.read(bleConnectionProvider.notifier)
           .waitForConnection(timeout: const Duration(seconds: 40));
 
@@ -83,10 +81,15 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
       _tickSub = _trainer.tickStream.listen((t) => setState(() => _elapsed = t));
 
       _stateSub = _trainer.stateStream.listen((state) {
+        setState(() => _sessionState = state);
         if (state == SessionState.finished) _onFinish();
       });
 
-      setState(() { _connected = true; _initializing = false; });
+      setState(() {
+        _connected = true;
+        _initializing = false;
+        _sessionState = SessionState.running;
+      });
     } catch (e) {
       setState(() { _error = e.toString(); _initializing = false; });
     }
@@ -109,6 +112,38 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
     }
   }
 
+  Future<void> _showStopDialog() async {
+    final wasRunning = _trainer.state == SessionState.running;
+    if (wasRunning) await _trainer.pause();
+
+    if (!mounted) return;
+    final stop = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Stop Training?'),
+        content: const Text('This will end your current session and return to the home screen.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Keep Going'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Stop Training'),
+          ),
+        ],
+      ),
+    ) ?? false;
+
+    if (stop) {
+      if (mounted) Navigator.pop(context);
+    } else if (wasRunning) {
+      _trainer.resume();
+    }
+  }
+
   String _formatTime(int seconds) {
     final m = seconds ~/ 60;
     final s = seconds % 60;
@@ -121,9 +156,7 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
     _connSub?.cancel();
     _tickSub?.cancel();
     _stateSub?.cancel();
-    // The BleService is owned by bleConnectionProvider — do not disconnect or
-    // dispose it here. The connection persists for the HomeScreen HR indicator.
-    if (_initializing == false) {
+    if (!_initializing) {
       _trainer.dispose();
       _audio.dispose();
     }
@@ -155,30 +188,58 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
 
     final stage = _trainer.currentStage;
     final stageProgress = _trainer.stageElapsedSeconds / stage.durationSeconds;
+    final isPaused = _sessionState == SessionState.paused;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(_connected ? 'Session Active' : 'Session (Disconnected)'),
-        backgroundColor: _connected ? null : Colors.red.shade900,
-        automaticallyImplyLeading: false,
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text('Total: ${_formatTime(_elapsed)}',
-                style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 32),
-            _BpmDisplay(bpm: _bpm, target: stage.target),
-            const SizedBox(height: 32),
-            _StageCard(
-              stage: stage,
-              elapsed: _trainer.stageElapsedSeconds,
-              progress: stageProgress,
-            ),
-          ],
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _showStopDialog();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(_connected ? 'Session Active' : 'Session (Disconnected)'),
+          backgroundColor: _connected ? null : Colors.red.shade900,
+          automaticallyImplyLeading: false,
+          leading: IconButton(
+            icon: const Icon(Icons.close),
+            tooltip: 'Stop training',
+            onPressed: _showStopDialog,
+          ),
         ),
+        body: SafeArea(
+          top: false,
+          child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            children: [
+              Text('Total: ${_formatTime(_elapsed)}',
+                  style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 32),
+              _BpmDisplay(bpm: _bpm, target: stage.target, dimmed: isPaused),
+              const SizedBox(height: 32),
+              _StageCard(
+                stage: stage,
+                elapsed: _trainer.stageElapsedSeconds,
+                progress: stageProgress,
+              ),
+              const SizedBox(height: 32),
+              SizedBox(
+                width: double.infinity,
+                child: isPaused
+                    ? FilledButton.icon(
+                        onPressed: () => setState(() => _trainer.resume()),
+                        icon: const Icon(Icons.play_arrow),
+                        label: const Text('Resume'),
+                      )
+                    : OutlinedButton.icon(
+                        onPressed: () => _trainer.pause(),
+                        icon: const Icon(Icons.pause),
+                        label: const Text('Pause'),
+                      ),
+              ),
+            ],
+          ),
+        )),
       ),
     );
   }
@@ -187,14 +248,16 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
 class _BpmDisplay extends StatelessWidget {
   final int bpm;
   final StageTarget target;
+  final bool dimmed;
 
-  const _BpmDisplay({required this.bpm, required this.target});
+  const _BpmDisplay({required this.bpm, required this.target, this.dimmed = false});
 
   @override
   Widget build(BuildContext context) {
     Color color = Colors.green;
     if (target.isAbove(bpm)) color = Colors.orange;
     if (target.isBelow(bpm)) color = Colors.blue;
+    if (dimmed) color = color.withValues(alpha: 0.4);
 
     return Column(
       children: [

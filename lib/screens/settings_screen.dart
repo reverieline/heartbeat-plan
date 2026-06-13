@@ -112,7 +112,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         title: const Text('Settings'),
         actions: [TextButton(onPressed: _save, child: const Text('Save'))],
       ),
-      body: !_loaded
+      body: SafeArea(
+        top: false,
+        child: !_loaded
           ? const Center(child: CircularProgressIndicator())
           : ListView(
               padding: const EdgeInsets.all(16),
@@ -182,6 +184,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ],
               ],
             ),
+      ),
     );
   }
 

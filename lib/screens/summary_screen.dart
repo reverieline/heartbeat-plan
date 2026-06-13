@@ -68,7 +68,9 @@ class _SummaryScreenState extends State<SummaryScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Workout Summary')),
-      body: ListView(
+      body: SafeArea(
+        top: false,
+        child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           Card(
@@ -103,7 +105,7 @@ class _SummaryScreenState extends State<SummaryScreen> {
             ),
           ),
         ],
-      ),
+      )),
     );
   }
 }

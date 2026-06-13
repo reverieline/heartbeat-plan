@@ -33,7 +33,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Session History')),
-      body: _logs == null
+      body: SafeArea(
+        top: false,
+        child: _logs == null
           ? const Center(child: CircularProgressIndicator())
           : _logs!.isEmpty
               ? const Center(child: Text('No sessions recorded yet'))
@@ -48,6 +50,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     );
                   },
                 ),
+      ),
     );
   }
 
