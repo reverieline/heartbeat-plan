@@ -113,7 +113,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                         selected: isSelected,
                         onTap: _selecting
                             ? () => _toggleSelect(file.path)
-                            : () => _showLog(context, file),
+                            : () => _showLog(context, file, i),
                         onLongPress: _selecting ? null : () => _toggleSelect(file.path),
                       );
                     },
@@ -146,7 +146,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
     );
   }
 
-  void _showLog(BuildContext context, File file) async {
+  void _showLog(BuildContext context, File file, int index) async {
     final content = await file.readAsString();
     final log = SessionLog.fromText(content);
     if (!context.mounted) return;
@@ -169,7 +169,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => SummaryScreen(log: log, profile: config.userProfile),
+        builder: (_) => SummaryScreen(
+          log: log,
+          profile: config.userProfile,
+          allLogs: List<File>.from(_logs!),
+          initialIndex: index,
+        ),
       ),
     );
   }
