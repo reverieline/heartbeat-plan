@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
@@ -286,6 +287,8 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
     final stage = _trainer.currentStage;
     final stageProgress = _trainer.stageElapsedSeconds / stage.durationSeconds;
     final isPaused = _sessionState == SessionState.paused;
+    final totalDuration =
+        _trainer.stages.fold<int>(0, (sum, s) => sum + s.durationSeconds);
 
     return PopScope(
       canPop: false,
@@ -311,8 +314,21 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
             children: [
               Text(_formatTime(_elapsed),
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(fontSize: 48)),
-              const SizedBox(height: 32),
-              _BpmDisplay(bpm: _bpm, target: stage.target, dimmed: isPaused),
+              const SizedBox(height: 24),
+              Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 340),
+                  child: _TrainingProgressRing(
+                    stages: _trainer.stages,
+                    totalElapsedSeconds: _trainer.totalElapsedSeconds,
+                    totalDurationSeconds: totalDuration,
+                    currentStageIndex: _trainer.currentStageIndex,
+                    dimmed: isPaused,
+                    child: _BpmDisplay(
+                        bpm: _bpm, target: stage.target, dimmed: isPaused),
+                  ),
+                ),
+              ),
               const SizedBox(height: 32),
               _StageCard(
                 stage: stage,
@@ -399,7 +415,220 @@ class _BpmDisplay extends StatelessWidget {
     if (target.isBelow(bpm)) color = Colors.blue;
     if (dimmed) color = color.withValues(alpha: 0.4);
 
-    return Text('$bpm', style: TextStyle(fontSize: 96, fontWeight: FontWeight.bold, color: color));
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text('$bpm',
+            style: TextStyle(
+                fontSize: 72, fontWeight: FontWeight.bold, color: color, height: 1.0)),
+        Text('BPM',
+            style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 2,
+                color: color.withValues(alpha: dimmed ? 0.4 : 0.7))),
+      ],
+    );
+  }
+}
+
+/// A circular progress ring drawn around the heart-rate display. The ring
+/// represents the whole training session: the filled arc is overall progress,
+/// segment gaps mark the boundaries between stages, and each stage is labeled
+/// just outside the ring at its arc midpoint (anchored radially so labels
+/// never overlap the indicator).
+class _TrainingProgressRing extends StatelessWidget {
+  final List<TrainingStage> stages;
+  final int totalElapsedSeconds;
+  final int totalDurationSeconds;
+  final int currentStageIndex;
+  final bool dimmed;
+  final Widget child;
+
+  const _TrainingProgressRing({
+    required this.stages,
+    required this.totalElapsedSeconds,
+    required this.totalDurationSeconds,
+    required this.currentStageIndex,
+    required this.dimmed,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final alpha = dimmed ? 0.4 : 1.0;
+    return AspectRatio(
+      aspectRatio: 1,
+      child: CustomPaint(
+        painter: _ProgressRingPainter(
+          stages: stages,
+          totalElapsedSeconds: totalElapsedSeconds,
+          totalDurationSeconds: totalDurationSeconds,
+          currentStageIndex: currentStageIndex,
+          trackColor: scheme.surfaceContainerHighest.withValues(alpha: alpha),
+          progressColor: scheme.primary.withValues(alpha: alpha),
+          gapColor: Theme.of(context).scaffoldBackgroundColor,
+          labelColor: scheme.onSurfaceVariant.withValues(alpha: 0.7 * alpha),
+          activeLabelColor: scheme.primary.withValues(alpha: alpha),
+          textDirection: Directionality.of(context),
+        ),
+        child: Center(child: child),
+      ),
+    );
+  }
+}
+
+class _ProgressRingPainter extends CustomPainter {
+  final List<TrainingStage> stages;
+  final int totalElapsedSeconds;
+  final int totalDurationSeconds;
+  final int currentStageIndex;
+  final Color trackColor;
+  final Color progressColor;
+  final Color gapColor;
+  final Color labelColor;
+  final Color activeLabelColor;
+  final TextDirection textDirection;
+
+  static const double _stroke = 16;
+  static const double _tickOut = 6;
+  static const double _labelGap = 8;
+  static const double _startAngle = -math.pi / 2; // 12 o'clock
+
+  _ProgressRingPainter({
+    required this.stages,
+    required this.totalElapsedSeconds,
+    required this.totalDurationSeconds,
+    required this.currentStageIndex,
+    required this.trackColor,
+    required this.progressColor,
+    required this.gapColor,
+    required this.labelColor,
+    required this.activeLabelColor,
+    required this.textDirection,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (totalDurationSeconds <= 0 || stages.isEmpty) return;
+
+    final center = Offset(size.width / 2, size.height / 2);
+    // Reserve an outer band of the radius for stage labels so they sit fully
+    // outside the ring without clipping the widget edges.
+    final maxRadius = size.shortestSide / 2;
+    final labelBand = size.shortestSide * 0.20;
+    final radius = maxRadius - labelBand;
+    if (radius <= _stroke) return;
+
+    Offset polar(double r, double angle) =>
+        center + Offset(math.cos(angle) * r, math.sin(angle) * r);
+
+    // Track.
+    final trackPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = _stroke
+      ..color = trackColor;
+    canvas.drawCircle(center, radius, trackPaint);
+
+    // Progress arc.
+    final fraction =
+        (totalElapsedSeconds / totalDurationSeconds).clamp(0.0, 1.0);
+    if (fraction > 0) {
+      final progressPaint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = _stroke
+        ..strokeCap = StrokeCap.round
+        ..color = progressColor;
+      canvas.drawArc(
+        Rect.fromCircle(center: center, radius: radius),
+        _startAngle,
+        2 * math.pi * fraction,
+        false,
+        progressPaint,
+      );
+    }
+
+    // Cumulative stage boundaries (as fractions of the whole session).
+    final boundaries = <double>[];
+    int acc = 0;
+    for (final s in stages) {
+      acc += s.durationSeconds;
+      boundaries.add(acc / totalDurationSeconds);
+    }
+
+    // Segment separators: a short gap cut across the ring at each internal
+    // boundary, marking where one stage ends and the next begins.
+    final gapPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3.5
+      ..strokeCap = StrokeCap.round
+      ..color = gapColor;
+    for (var i = 0; i < boundaries.length - 1; i++) {
+      final angle = _startAngle + 2 * math.pi * boundaries[i];
+      canvas.drawLine(
+        polar(radius - _stroke / 2 - 0.5, angle),
+        polar(radius + _stroke / 2 + 0.5, angle),
+        gapPaint,
+      );
+    }
+
+    // Stage labels at each stage's arc midpoint, anchored radially.
+    final labelRadius = radius + _stroke / 2 + _tickOut + _labelGap;
+    double prevFraction = 0;
+    for (var i = 0; i < stages.length; i++) {
+      final midFraction = (prevFraction + boundaries[i]) / 2;
+      prevFraction = boundaries[i];
+      final angle = _startAngle + 2 * math.pi * midFraction;
+      final anchor = polar(labelRadius, angle);
+      final isActive = i == currentStageIndex;
+
+      final tp = TextPainter(
+        text: TextSpan(
+          text: stages[i].name,
+          style: TextStyle(
+            fontSize: 11.5,
+            height: 1.1,
+            fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+            color: isActive ? activeLabelColor : labelColor,
+          ),
+        ),
+        textDirection: textDirection,
+        textAlign: TextAlign.center,
+        maxLines: 2,
+        ellipsis: '…',
+      )..layout(maxWidth: labelBand * 1.7);
+
+      final cosA = math.cos(angle);
+      final sinA = math.sin(angle);
+      double dx;
+      if (cosA > 0.3) {
+        dx = 0; // right side: grow rightward from anchor
+      } else if (cosA < -0.3) {
+        dx = -tp.width; // left side: grow leftward
+      } else {
+        dx = -tp.width / 2; // top/bottom: centered
+      }
+      double dy;
+      if (sinA < -0.3) {
+        dy = -tp.height; // top: sit above the anchor
+      } else if (sinA > 0.3) {
+        dy = 0; // bottom: sit below the anchor
+      } else {
+        dy = -tp.height / 2; // sides: vertically centered
+      }
+      tp.paint(canvas, anchor + Offset(dx, dy));
+    }
+  }
+
+  @override
+  bool shouldRepaint(_ProgressRingPainter old) {
+    return old.totalElapsedSeconds != totalElapsedSeconds ||
+        old.currentStageIndex != currentStageIndex ||
+        old.totalDurationSeconds != totalDurationSeconds ||
+        old.stages != stages ||
+        old.trackColor != trackColor ||
+        old.progressColor != progressColor;
   }
 }
 
