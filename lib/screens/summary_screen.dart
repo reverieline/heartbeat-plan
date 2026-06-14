@@ -105,6 +105,28 @@ class _SummaryScreenState extends State<SummaryScreen> {
               ),
             ),
           ),
+          const SizedBox(height: 16),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Reference HR Zones',
+                      style: Theme.of(context).textTheme.titleLarge),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Resting ${widget.profile.restingHr} bpm · Max ${widget.profile.maxHr} bpm',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 8),
+                  ..._summary.zoneSummaries.map(
+                    (zs) => _Row(zs.zone.name, zs.zone.description),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ],
       )),
     );
