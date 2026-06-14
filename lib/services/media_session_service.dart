@@ -33,18 +33,25 @@ class MediaSessionService {
   static Future<void> start({
     required String stageName,
     required int bpm,
+    required int totalDurationSeconds,
   }) async {
-    await _channel.invokeMethod<void>('start', {'stageName': stageName, 'bpm': bpm});
+    await _channel.invokeMethod<void>('start', {
+      'stageName': stageName,
+      'bpm': bpm,
+      'totalDurationSeconds': totalDurationSeconds,
+    });
   }
 
   static Future<void> update({
     required String stageName,
     required int bpm,
+    required int elapsedSeconds,
     required bool isPaused,
   }) async {
     await _channel.invokeMethod<void>('update', {
       'stageName': stageName,
       'bpm': bpm,
+      'elapsedSeconds': elapsedSeconds,
       'isPaused': isPaused,
     });
   }

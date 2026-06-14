@@ -37,8 +37,10 @@ class MediaSessionHandler(
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private var mediaSession: MediaSession? = null
-    private var currentStage = ""
-    private var currentBpm   = 0
+    private var currentStage    = ""
+    private var currentBpm      = 0
+    private var totalDurationMs = 0L
+    private var elapsedMs       = 0L
     private var receiverRegistered = false
 
     // Receives ACTION_PLAY / ACTION_PAUSE / ACTION_STOP from notification buttons
@@ -59,14 +61,17 @@ class MediaSessionHandler(
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
             "start" -> {
-                currentStage = call.argument<String>("stageName") ?: ""
-                currentBpm   = call.argument<Int>("bpm") ?: 0
+                currentStage    = call.argument<String>("stageName") ?: ""
+                currentBpm      = call.argument<Int>("bpm") ?: 0
+                totalDurationMs = (call.argument<Int>("totalDurationSeconds") ?: 0) * 1000L
+                elapsedMs       = 0L
                 start()
                 result.success(null)
             }
             "update" -> {
                 currentStage = call.argument<String>("stageName") ?: ""
                 currentBpm   = call.argument<Int>("bpm") ?: 0
+                elapsedMs    = (call.argument<Int>("elapsedSeconds") ?: 0) * 1000L
                 val isPaused = call.argument<Boolean>("isPaused") ?: false
                 update(isPaused)
                 result.success(null)
@@ -85,16 +90,16 @@ class MediaSessionHandler(
         ensureChannel()
         ensureReceiver()
         val session = getOrCreate()
-        applyState(session, false)
         applyMetadata(session)
+        applyState(session, false)
         session.isActive = true
         postNotification(session, false)
     }
 
     private fun update(isPaused: Boolean) {
         val session = mediaSession ?: return
-        applyState(session, isPaused)
         applyMetadata(session)
+        applyState(session, isPaused)
         postNotification(session, isPaused)
     }
 
@@ -103,7 +108,7 @@ class MediaSessionHandler(
         mediaSession?.let { s ->
             s.setPlaybackState(
                 PlaybackState.Builder()
-                    .setState(PlaybackState.STATE_STOPPED, PlaybackState.PLAYBACK_POSITION_UNKNOWN, 1f)
+                    .setState(PlaybackState.STATE_STOPPED, totalDurationMs, 0f)
                     .build()
             )
             s.isActive = false
@@ -121,6 +126,9 @@ class MediaSessionHandler(
     private fun getOrCreate(): MediaSession {
         if (mediaSession == null) {
             mediaSession = MediaSession(ctx, "RHRTraining").apply {
+                // Prevent our session from routing hardware media buttons (headphones, BT)
+                // away from music apps — we only need the lock screen widget, not button control.
+                setMediaButtonReceiver(null)
                 setCallback(object : MediaSession.Callback() {
                     override fun onPlay()  { mainHandler.post { channel.invokeMethod("onPlay",  null) } }
                     override fun onPause() { mainHandler.post { channel.invokeMethod("onPause", null) } }
@@ -133,11 +141,13 @@ class MediaSessionHandler(
 
     private fun applyState(session: MediaSession, isPaused: Boolean) {
         val state   = if (isPaused) PlaybackState.STATE_PAUSED else PlaybackState.STATE_PLAYING
-        val actions = if (isPaused) PlaybackState.ACTION_PLAY  or PlaybackState.ACTION_STOP
-                      else          PlaybackState.ACTION_PAUSE  or PlaybackState.ACTION_STOP
+        // speed=1f while playing lets Android interpolate the progress bar between our 1s updates.
+        val speed   = if (isPaused) 0f else 1f
+        val actions = PlaybackState.ACTION_STOP or
+                      if (isPaused) PlaybackState.ACTION_PLAY else PlaybackState.ACTION_PAUSE
         session.setPlaybackState(
             PlaybackState.Builder()
-                .setState(state, PlaybackState.PLAYBACK_POSITION_UNKNOWN, 1f)
+                .setState(state, elapsedMs, speed)
                 .setActions(actions)
                 .build()
         )
@@ -149,6 +159,8 @@ class MediaSessionHandler(
                 .putString(MediaMetadata.METADATA_KEY_TITLE,  currentStage)
                 .putString(MediaMetadata.METADATA_KEY_ARTIST, if (currentBpm > 0) "$currentBpm bpm" else "-- bpm")
                 .putString(MediaMetadata.METADATA_KEY_ALBUM,  "RHR Training")
+                // -1 hides the progress bar; positive value enables it.
+                .putLong(MediaMetadata.METADATA_KEY_DURATION, if (totalDurationMs > 0) totalDurationMs else -1L)
                 .build()
         )
     }
@@ -172,7 +184,7 @@ class MediaSessionHandler(
         // MediaStyle links the notification to the session — required for lock screen widget.
         val style = Notification.MediaStyle()
             .setMediaSession(session.sessionToken)
-            .setShowActionsInCompactView(0, 1)  // Stop and Pause/Resume in compact view
+            .setShowActionsInCompactView(0, 1)  // Stop (0) and Pause/Resume (1)
 
         val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
             Notification.Builder(ctx, CHANNEL_ID)
@@ -187,8 +199,8 @@ class MediaSessionHandler(
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setContentIntent(contentIntent)
-            .addAction(stopAction)
-            .addAction(ppAction)
+            .addAction(stopAction)   // index 0
+            .addAction(ppAction)     // index 1
 
         nm.notify(NOTIFICATION_ID, builder.build())
     }

@@ -52,6 +52,7 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
       final config = await ref.read(configProvider.future);
       final planName = ref.read(selectedPlanNameProvider);
       final stages = await ref.read(planProvider(planName).future);
+      final totalDuration = stages.fold<int>(0, (sum, s) => sum + s.durationSeconds);
       _audio = AudioService(
         ttsEnabled: config.ttsEnabled,
         beepsEnabled: config.beepsEnabled,
@@ -94,7 +95,7 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
           elapsedSeconds: t,
           isPaused: paused,
         );
-        MediaSessionService.update(stageName: stage, bpm: _bpm, isPaused: paused);
+        MediaSessionService.update(stageName: stage, bpm: _bpm, elapsedSeconds: t, isPaused: paused);
       });
 
       _stateSub = _trainer.stateStream.listen((state) {
@@ -112,7 +113,7 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
             elapsedSeconds: _elapsed,
             isPaused: paused,
           );
-          MediaSessionService.update(stageName: stage, bpm: _bpm, isPaused: paused);
+          MediaSessionService.update(stageName: stage, bpm: _bpm, elapsedSeconds: _elapsed, isPaused: paused);
         }
       });
 
@@ -157,6 +158,7 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
       await MediaSessionService.start(
         stageName: _trainer.currentStage.name,
         bpm: 0,
+        totalDurationSeconds: totalDuration,
       );
 
       setState(() {
