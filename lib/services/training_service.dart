@@ -136,12 +136,12 @@ class TrainingService {
     audio.speak('${stage.name}. Target: ${stage.target.label}');
   }
 
-  void _finish() {
+  Future<void> _finish() async {
     _ticker?.cancel();
     _state = SessionState.finished;
     _log.add(LogEvent(timestamp: DateTime.now(), kind: LogEventKind.sessionEnd));
+    await audio.speak('Workout complete.');
     _stateController.add(_state);
-    audio.speak('Workout complete. Great job!');
   }
 
   void dispose() {
