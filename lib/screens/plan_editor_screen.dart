@@ -107,6 +107,10 @@ class _PlanEditorScreenState extends State<PlanEditorScreen> {
     });
   }
 
+  void _duplicateStage(int index) {
+    setState(() => _stages.insert(index + 1, _stages[index]));
+  }
+
   void _deleteStage(int index) {
     setState(() => _stages.removeAt(index));
   }
@@ -163,10 +167,11 @@ class _PlanEditorScreenState extends State<PlanEditorScreen> {
                           itemBuilder: (ctx, i) {
                             final stage = _stages[i];
                             return _StageTile(
-                              key: ValueKey(stage),
+                              key: ValueKey('$i-${stage.name}'),
                               index: i,
                               stage: stage,
                               onEdit: () => _editStage(stage, i),
+                              onDuplicate: () => _duplicateStage(i),
                               onDelete: () => _deleteStage(i),
                             );
                           },
@@ -221,6 +226,7 @@ class _StageTile extends StatelessWidget {
   final int index;
   final TrainingStage stage;
   final VoidCallback onEdit;
+  final VoidCallback onDuplicate;
   final VoidCallback onDelete;
 
   const _StageTile({
@@ -228,6 +234,7 @@ class _StageTile extends StatelessWidget {
     required this.index,
     required this.stage,
     required this.onEdit,
+    required this.onDuplicate,
     required this.onDelete,
   });
 
@@ -251,6 +258,11 @@ class _StageTile extends StatelessWidget {
             icon: const Icon(Icons.edit),
             tooltip: 'Edit stage',
             onPressed: onEdit,
+          ),
+          IconButton(
+            icon: const Icon(Icons.content_copy),
+            tooltip: 'Duplicate stage',
+            onPressed: onDuplicate,
           ),
           IconButton(
             icon: const Icon(Icons.delete_outline),

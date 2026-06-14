@@ -34,6 +34,11 @@ class PlanListScreen extends ConsumerWidget {
                           tooltip: 'Edit',
                           onPressed: () => _openEditor(context, ref, name),
                         ),
+                        IconButton(
+                          icon: const Icon(Icons.content_copy),
+                          tooltip: 'Duplicate',
+                          onPressed: () => _duplicatePlan(context, ref, name),
+                        ),
                         if (name != 'default')
                           IconButton(
                             icon: const Icon(Icons.delete_outline),
@@ -69,6 +74,50 @@ class PlanListScreen extends ConsumerWidget {
         ref.read(selectedPlanNameProvider.notifier).select(savedAs);
       }
     }
+  }
+
+  Future<void> _duplicatePlan(BuildContext context, WidgetRef ref, String name) async {
+    final controller = TextEditingController(text: 'Copy of $name');
+    final newName = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        scrollable: true,
+        title: const Text('Duplicate Plan'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'New plan name'),
+          textCapitalization: TextCapitalization.words,
+          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('Duplicate'),
+          ),
+        ],
+      ),
+    );
+
+    if (newName == null || newName.isEmpty || !context.mounted) return;
+
+    final exists = await PlanService.planExists(newName);
+    if (!context.mounted) return;
+
+    if (exists) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('A plan named "$newName" already exists')),
+      );
+      return;
+    }
+
+    final stages = await PlanService.loadPlan(name);
+    await PlanService.savePlan(newName, stages);
+    ref.invalidate(planListProvider);
   }
 
   Future<void> _confirmDelete(BuildContext context, WidgetRef ref, String name) async {
