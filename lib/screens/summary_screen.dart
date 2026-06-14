@@ -31,9 +31,10 @@ class _SummaryScreenState extends State<SummaryScreen> {
 
     final zoneSeconds = {for (final z in zones) z: 0.0};
     for (int i = 1; i < bpmSamples.length; i++) {
-      final dt = bpmSamples[i].$1.difference(bpmSamples[i - 1].$1).inSeconds.toDouble();
-      if (dt <= 0 || dt > 300) continue;
+      final dt = bpmSamples[i].$1.difference(bpmSamples[i - 1].$1).inMilliseconds / 1000.0;
+      if (dt <= 0 || dt > 10) continue;
       final bpm = bpmSamples[i].$2;
+      if (bpm <= 0 || bpmSamples[i - 1].$2 <= 0) continue;
       for (final z in zones) {
         if (z.contains(bpm)) {
           zoneSeconds[z] = (zoneSeconds[z] ?? 0) + dt;

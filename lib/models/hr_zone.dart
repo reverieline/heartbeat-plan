@@ -71,8 +71,9 @@ double estimateCalories({
   if (bpmSamples.length < 2) return 0.0;
   double totalKcal = 0.0;
   for (int i = 1; i < bpmSamples.length; i++) {
-    final dt = bpmSamples[i].$1.difference(bpmSamples[i - 1].$1).inSeconds;
-    if (dt <= 0 || dt > 300) continue;
+    final dt = bpmSamples[i].$1.difference(bpmSamples[i - 1].$1).inMilliseconds / 1000.0;
+    if (dt <= 0 || dt > 10) continue;
+    if (bpmSamples[i].$2 <= 0 || bpmSamples[i - 1].$2 <= 0) continue;
     final avgBpm = (bpmSamples[i].$2 + bpmSamples[i - 1].$2) / 2.0;
     final durationMin = dt / 60.0;
     final kcalPerMin = profile.sex == 'male'
