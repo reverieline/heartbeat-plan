@@ -15,6 +15,15 @@ class AudioService {
   // Completer held while a speak() utterance is in progress.
   Completer<void>? _ttsCompleter;
 
+  // Beeps play with no audio focus request so music continues uninterrupted.
+  static final _beepContext = AudioContext(
+    android: AudioContextAndroid(
+      audioFocus: AndroidAudioFocus.none,
+      usageType: AndroidUsageType.notification,
+      contentType: AndroidContentType.sonification,
+    ),
+  );
+
   AudioService({
     this.ttsEnabled = true,
     this.beepsEnabled = true,
@@ -26,6 +35,8 @@ class AudioService {
     _tts.setVolume(1.0);
     _tts.setPitch(ttsPitch);
     if (ttsVoice != null) _tts.setVoice(ttsVoice);
+    // Use navigation guidance audio attributes so TTS ducks music rather than stopping it.
+    _tts.setAudioAttributesForNavigation();
 
     // All three callbacks complete the completer so _doSpeak unblocks
     // regardless of whether TTS finished, was cancelled, or errored.
@@ -87,7 +98,7 @@ class AudioService {
 
   Future<void> _playToneSequence(List<int> freqsHz) async {
     for (final freq in freqsHz) {
-      await _player.play(BytesSource(_generateTone(freq, 160)));
+      await _player.play(BytesSource(_generateTone(freq, 160)), ctx: _beepContext);
       await Future<void>.delayed(const Duration(milliseconds: 240));
     }
   }

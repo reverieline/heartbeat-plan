@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.drawable.Icon
+import android.media.AudioAttributes
 import android.media.MediaMetadata
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
@@ -129,6 +130,14 @@ class MediaSessionHandler(
                 // Prevent our session from routing hardware media buttons (headphones, BT)
                 // away from music apps — we only need the lock screen widget, not button control.
                 setMediaButtonReceiver(null)
+                // USAGE_UNKNOWN signals this session has no audio of its own, so Android/Samsung
+                // does not route audio focus through it or displace the music player's session.
+                setPlaybackToLocal(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_UNKNOWN)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_UNKNOWN)
+                        .build()
+                )
                 setCallback(object : MediaSession.Callback() {
                     override fun onPlay()  { mainHandler.post { channel.invokeMethod("onPlay",  null) } }
                     override fun onPause() { mainHandler.post { channel.invokeMethod("onPause", null) } }
