@@ -57,6 +57,12 @@ dependencies:
   # Foreground service (notification shade + lock screen session controls)
   flutter_foreground_task: ^8.0.0
 
+  # Keep screen on during active session
+  wakelock_plus: ^1.3.0
+
+  # Native Android toast messages
+  fluttertoast: ^9.1.0
+
   # Data models + serialization
   freezed_annotation: ^2.4.4
   json_annotation: ^4.9.0

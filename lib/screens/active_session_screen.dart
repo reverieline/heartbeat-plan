@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import '../providers/app_providers.dart';
 import '../providers/ble_provider.dart';
 import '../services/ble_service.dart';
@@ -34,6 +36,7 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
   SessionState _sessionState = SessionState.idle;
   bool _ttsEnabled = true;
   bool _beepsEnabled = true;
+  bool _keepDisplayOn = false;
 
   StreamSubscription<HeartRateData>? _hrSub;
   StreamSubscription<bool>? _connSub;
@@ -230,6 +233,14 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
     return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
 
+  void _showToast(String message) {
+    Fluttertoast.showToast(
+      msg: message,
+      toastLength: Toast.LENGTH_SHORT,
+      gravity: ToastGravity.BOTTOM,
+    );
+  }
+
   @override
   void dispose() {
     _hrSub?.cancel();
@@ -241,6 +252,7 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
     }
     ForegroundNotificationService.stop();
     MediaSessionService.stop();
+    WakelockPlus.disable();
     if (!_initializing) {
       _trainer.dispose();
       _audio.dispose();
@@ -329,18 +341,38 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
                   IconButton(
                     icon: Icon(_beepsEnabled ? Icons.music_note : Icons.music_off),
                     tooltip: _beepsEnabled ? 'Mute beeps' : 'Unmute beeps',
-                    onPressed: () => setState(() {
-                      _beepsEnabled = !_beepsEnabled;
-                      _audio.beepsEnabled = _beepsEnabled;
-                    }),
+                    onPressed: () {
+                      setState(() {
+                        _beepsEnabled = !_beepsEnabled;
+                        _audio.beepsEnabled = _beepsEnabled;
+                      });
+                      _showToast(_beepsEnabled ? 'Beeps on' : 'Beeps off');
+                    },
                   ),
                   IconButton(
                     icon: Icon(_ttsEnabled ? Icons.record_voice_over : Icons.voice_over_off),
                     tooltip: _ttsEnabled ? 'Mute voice' : 'Unmute voice',
-                    onPressed: () => setState(() {
-                      _ttsEnabled = !_ttsEnabled;
-                      _audio.ttsEnabled = _ttsEnabled;
-                    }),
+                    onPressed: () {
+                      setState(() {
+                        _ttsEnabled = !_ttsEnabled;
+                        _audio.ttsEnabled = _ttsEnabled;
+                      });
+                      _showToast(_ttsEnabled ? 'Voice on' : 'Voice off');
+                    },
+                  ),
+                  IconButton(
+                    icon: Icon(_keepDisplayOn ? Icons.visibility : Icons.visibility_off),
+                    tooltip: _keepDisplayOn ? 'Allow screen lock' : 'Keep screen on',
+                    onPressed: () async {
+                      setState(() => _keepDisplayOn = !_keepDisplayOn);
+                      if (_keepDisplayOn) {
+                        await WakelockPlus.enable();
+                        _showToast('Screen will stay on');
+                      } else {
+                        await WakelockPlus.disable();
+                        _showToast('Screen lock enabled');
+                      }
+                    },
                   ),
                 ],
               ),
