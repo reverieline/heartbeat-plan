@@ -1,12 +1,14 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import '../providers/app_providers.dart';
 import '../providers/ble_provider.dart';
 import '../services/ble_service.dart';
 import '../services/training_service.dart';
 import '../services/audio_service.dart';
 import '../services/log_service.dart';
+import '../services/foreground_notification_service.dart';
 import '../models/session_log.dart';
 import '../models/training_plan.dart';
 import 'summary_screen.dart';
@@ -36,6 +38,7 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
   StreamSubscription<bool>? _connSub;
   StreamSubscription<int>? _tickSub;
   StreamSubscription<SessionState>? _stateSub;
+  void Function(Object)? _notifCallback;
 
   @override
   void initState() {
@@ -80,12 +83,55 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
         if (connected) _trainer.handleReconnect(null);
       });
 
-      _tickSub = _trainer.tickStream.listen((t) => setState(() => _elapsed = t));
+      _tickSub = _trainer.tickStream.listen((t) {
+        setState(() => _elapsed = t);
+        ForegroundNotificationService.update(
+          stageName: _trainer.currentStage.name,
+          bpm: _bpm,
+          elapsedSeconds: t,
+          isPaused: _sessionState == SessionState.paused,
+        );
+      });
 
       _stateSub = _trainer.stateStream.listen((state) {
         setState(() => _sessionState = state);
-        if (state == SessionState.finished) _onFinish();
+        if (state == SessionState.finished) {
+          _onFinish();
+          return;
+        }
+        if (state == SessionState.paused || state == SessionState.running) {
+          ForegroundNotificationService.update(
+            stageName: _trainer.currentStage.name,
+            bpm: _bpm,
+            elapsedSeconds: _elapsed,
+            isPaused: state == SessionState.paused,
+          );
+        }
       });
+
+      // Start foreground service notification.
+      await ForegroundNotificationService.requestPermission();
+      await ForegroundNotificationService.start(
+        stageName: _trainer.currentStage.name,
+        bpm: 0,
+        elapsedSeconds: 0,
+      );
+
+      // Listen for Pause/Resume and Stop button presses from the notification.
+      _notifCallback = (data) {
+        if (!mounted) return;
+        if (data == 'pause_resume') {
+          if (_trainer.state == SessionState.paused) {
+            setState(() => _trainer.resume());
+          } else {
+            _trainer.pause();
+          }
+        } else if (data == 'stop') {
+          // Immediate stop from notification — no confirmation dialog.
+          Navigator.pop(context);
+        }
+      };
+      FlutterForegroundTask.addTaskDataCallback(_notifCallback!);
 
       setState(() {
         _connected = true;
@@ -100,6 +146,7 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
   }
 
   Future<void> _onFinish() async {
+    await ForegroundNotificationService.stop();
     final config = await ref.read(configProvider.future);
     final log = SessionLog(
       startTime: DateTime.now().subtract(Duration(seconds: _elapsed)),
@@ -160,6 +207,10 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
     _connSub?.cancel();
     _tickSub?.cancel();
     _stateSub?.cancel();
+    if (_notifCallback != null) {
+      FlutterForegroundTask.removeTaskDataCallback(_notifCallback!);
+    }
+    ForegroundNotificationService.stop();
     if (!_initializing) {
       _trainer.dispose();
       _audio.dispose();
