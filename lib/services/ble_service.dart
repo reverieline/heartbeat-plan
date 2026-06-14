@@ -17,8 +17,14 @@ class BleDevice {
   final BluetoothDevice device;
   final String name;
   final String address;
+  final bool advertisesHr;
 
-  BleDevice({required this.device, required this.name, required this.address});
+  BleDevice({
+    required this.device,
+    required this.name,
+    required this.address,
+    this.advertisesHr = false,
+  });
 }
 
 class BleService {
@@ -48,10 +54,13 @@ class BleService {
                 : '';
         if (name.isEmpty) continue; // skip truly anonymous devices
         seen.add(r.device.remoteId.str);
+        final advertisesHr = r.advertisementData.serviceUuids
+            .any((u) => u.toString().toLowerCase().contains('180d'));
         found.add(BleDevice(
           device: r.device,
           name: name,
           address: r.device.remoteId.str,
+          advertisesHr: advertisesHr,
         ));
       }
     });

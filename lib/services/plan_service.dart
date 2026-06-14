@@ -61,17 +61,42 @@ class PlanService {
         const TrainingStage(
           name: 'Warmup',
           durationMinutes: 10,
-          target: StageTarget(mode: TargetMode.range, minBpm: 100, maxBpm: 130),
+          target: StageTarget(mode: TargetMode.max, maxBpm: 120),
         ),
         const TrainingStage(
           name: 'Fat Burning',
-          durationMinutes: 20,
-          target: StageTarget(mode: TargetMode.range, minBpm: 132, maxBpm: 144),
+          durationMinutes: 8,
+          target: StageTarget(mode: TargetMode.range, minBpm: 120, maxBpm: 130),
+        ),
+        const TrainingStage(
+          name: 'Aerobic',
+          durationMinutes: 2,
+          target: StageTarget(mode: TargetMode.range, minBpm: 130, maxBpm: 145),
+        ),
+        const TrainingStage(
+          name: 'Fat Burning',
+          durationMinutes: 8,
+          target: StageTarget(mode: TargetMode.range, minBpm: 120, maxBpm: 130),
+        ),
+        const TrainingStage(
+          name: 'Aerobic',
+          durationMinutes: 2,
+          target: StageTarget(mode: TargetMode.range, minBpm: 130, maxBpm: 145),
+        ),
+        const TrainingStage(
+          name: 'Fat Burning',
+          durationMinutes: 8,
+          target: StageTarget(mode: TargetMode.range, minBpm: 120, maxBpm: 130),
+        ),
+        const TrainingStage(
+          name: 'Aerobic',
+          durationMinutes: 2,
+          target: StageTarget(mode: TargetMode.range, minBpm: 130, maxBpm: 145),
         ),
         const TrainingStage(
           name: 'Cooldown',
           durationMinutes: 10,
-          target: StageTarget(mode: TargetMode.max, maxBpm: 120),
+          target: StageTarget(mode: TargetMode.none),
         ),
       ];
 }

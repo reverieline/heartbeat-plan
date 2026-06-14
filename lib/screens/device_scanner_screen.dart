@@ -86,7 +86,9 @@ class _DeviceScannerScreenState extends ConsumerState<DeviceScannerScreen> {
                   itemBuilder: (_, i) {
                     final d = _devices[i];
                     return ListTile(
-                      leading: const Icon(Icons.bluetooth),
+                      leading: d.advertisesHr
+                          ? const Icon(Icons.favorite, color: Colors.redAccent)
+                          : const Icon(Icons.bluetooth),
                       title: Text(d.name),
                       subtitle: Text(d.address),
                       onTap: () => _selectDevice(d),
