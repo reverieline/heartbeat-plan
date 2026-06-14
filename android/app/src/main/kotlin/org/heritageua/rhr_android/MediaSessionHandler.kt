@@ -1,35 +1,74 @@
 package org.heritageua.rhr_android
 
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.graphics.drawable.Icon
 import android.media.MediaMetadata
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 
 class MediaSessionHandler(
-    private val context: Context,
+    context: Context,
     private val channel: MethodChannel
 ) : MethodChannel.MethodCallHandler {
 
-    private var mediaSession: MediaSession? = null
+    companion object {
+        private const val CHANNEL_ID      = "rhr_media_controls"
+        private const val NOTIFICATION_ID  = 1002
+        private const val ACTION_PLAY      = "org.heritageua.rhr_android.MEDIA_PLAY"
+        private const val ACTION_PAUSE     = "org.heritageua.rhr_android.MEDIA_PAUSE"
+        private const val ACTION_STOP      = "org.heritageua.rhr_android.MEDIA_STOP"
+    }
+
+    // Use applicationContext so Activity lifecycle doesn't affect the session.
+    private val ctx: Context = context.applicationContext
+    private val nm: NotificationManager = ctx.getSystemService(NotificationManager::class.java)
     private val mainHandler = Handler(Looper.getMainLooper())
+
+    private var mediaSession: MediaSession? = null
+    private var currentStage = ""
+    private var currentBpm   = 0
+    private var receiverRegistered = false
+
+    // Receives ACTION_PLAY / ACTION_PAUSE / ACTION_STOP from notification buttons
+    // and routes them through MediaSession.Callback so Flutter gets the callbacks.
+    private val transportReceiver = object : BroadcastReceiver() {
+        override fun onReceive(c: Context?, intent: Intent?) {
+            val controls = mediaSession?.controller?.transportControls ?: return
+            when (intent?.action) {
+                ACTION_PLAY  -> controls.play()
+                ACTION_PAUSE -> controls.pause()
+                ACTION_STOP  -> controls.stop()
+            }
+        }
+    }
+
+    // ── MethodChannel ────────────────────────────────────────────────────────
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
             "start" -> {
-                val stageName = call.argument<String>("stageName") ?: ""
-                val bpm = call.argument<Int>("bpm") ?: 0
-                start(stageName, bpm)
+                currentStage = call.argument<String>("stageName") ?: ""
+                currentBpm   = call.argument<Int>("bpm") ?: 0
+                start()
                 result.success(null)
             }
             "update" -> {
-                val stageName = call.argument<String>("stageName") ?: ""
-                val bpm = call.argument<Int>("bpm") ?: 0
+                currentStage = call.argument<String>("stageName") ?: ""
+                currentBpm   = call.argument<Int>("bpm") ?: 0
                 val isPaused = call.argument<Boolean>("isPaused") ?: false
-                update(stageName, bpm, isPaused)
+                update(isPaused)
                 result.success(null)
             }
             "stop" -> {
@@ -40,59 +79,62 @@ class MediaSessionHandler(
         }
     }
 
+    // ── Session lifecycle ────────────────────────────────────────────────────
+
+    private fun start() {
+        ensureChannel()
+        ensureReceiver()
+        val session = getOrCreate()
+        applyState(session, false)
+        applyMetadata(session)
+        session.isActive = true
+        postNotification(session, false)
+    }
+
+    private fun update(isPaused: Boolean) {
+        val session = mediaSession ?: return
+        applyState(session, isPaused)
+        applyMetadata(session)
+        postNotification(session, isPaused)
+    }
+
+    private fun stop() {
+        nm.cancel(NOTIFICATION_ID)
+        mediaSession?.let { s ->
+            s.setPlaybackState(
+                PlaybackState.Builder()
+                    .setState(PlaybackState.STATE_STOPPED, PlaybackState.PLAYBACK_POSITION_UNKNOWN, 1f)
+                    .build()
+            )
+            s.isActive = false
+            s.release()
+        }
+        mediaSession = null
+        if (receiverRegistered) {
+            try { ctx.unregisterReceiver(transportReceiver) } catch (_: Exception) {}
+            receiverRegistered = false
+        }
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
     private fun getOrCreate(): MediaSession {
         if (mediaSession == null) {
-            mediaSession = MediaSession(context, "RHRTraining").apply {
+            mediaSession = MediaSession(ctx, "RHRTraining").apply {
                 setCallback(object : MediaSession.Callback() {
-                    override fun onPlay() {
-                        mainHandler.post { channel.invokeMethod("onPlay", null) }
-                    }
-                    override fun onPause() {
-                        mainHandler.post { channel.invokeMethod("onPause", null) }
-                    }
-                    override fun onStop() {
-                        mainHandler.post { channel.invokeMethod("onStop", null) }
-                    }
+                    override fun onPlay()  { mainHandler.post { channel.invokeMethod("onPlay",  null) } }
+                    override fun onPause() { mainHandler.post { channel.invokeMethod("onPause", null) } }
+                    override fun onStop()  { mainHandler.post { channel.invokeMethod("onStop",  null) } }
                 })
             }
         }
         return mediaSession!!
     }
 
-    private fun start(stageName: String, bpm: Int) {
-        val session = getOrCreate()
-        applyState(session, isPaused = false)
-        applyMetadata(session, stageName, bpm)
-        session.isActive = true
-    }
-
-    private fun update(stageName: String, bpm: Int, isPaused: Boolean) {
-        val session = mediaSession ?: return
-        applyState(session, isPaused)
-        applyMetadata(session, stageName, bpm)
-    }
-
-    private fun stop() {
-        mediaSession?.let { session ->
-            session.setPlaybackState(
-                PlaybackState.Builder()
-                    .setState(PlaybackState.STATE_STOPPED, PlaybackState.PLAYBACK_POSITION_UNKNOWN, 1f)
-                    .setActions(0)
-                    .build()
-            )
-            session.isActive = false
-            session.release()
-        }
-        mediaSession = null
-    }
-
     private fun applyState(session: MediaSession, isPaused: Boolean) {
-        val state = if (isPaused) PlaybackState.STATE_PAUSED else PlaybackState.STATE_PLAYING
-        val actions = if (isPaused) {
-            PlaybackState.ACTION_PLAY or PlaybackState.ACTION_STOP
-        } else {
-            PlaybackState.ACTION_PAUSE or PlaybackState.ACTION_STOP
-        }
+        val state   = if (isPaused) PlaybackState.STATE_PAUSED else PlaybackState.STATE_PLAYING
+        val actions = if (isPaused) PlaybackState.ACTION_PLAY  or PlaybackState.ACTION_STOP
+                      else          PlaybackState.ACTION_PAUSE  or PlaybackState.ACTION_STOP
         session.setPlaybackState(
             PlaybackState.Builder()
                 .setState(state, PlaybackState.PLAYBACK_POSITION_UNKNOWN, 1f)
@@ -101,14 +143,96 @@ class MediaSessionHandler(
         )
     }
 
-    private fun applyMetadata(session: MediaSession, stageName: String, bpm: Int) {
-        val bpmStr = if (bpm > 0) "$bpm bpm" else "-- bpm"
+    private fun applyMetadata(session: MediaSession) {
         session.setMetadata(
             MediaMetadata.Builder()
-                .putString(MediaMetadata.METADATA_KEY_TITLE, stageName)
-                .putString(MediaMetadata.METADATA_KEY_ARTIST, bpmStr)
-                .putString(MediaMetadata.METADATA_KEY_ALBUM, "RHR Training")
+                .putString(MediaMetadata.METADATA_KEY_TITLE,  currentStage)
+                .putString(MediaMetadata.METADATA_KEY_ARTIST, if (currentBpm > 0) "$currentBpm bpm" else "-- bpm")
+                .putString(MediaMetadata.METADATA_KEY_ALBUM,  "RHR Training")
                 .build()
         )
+    }
+
+    /** Posts a MediaStyle notification linked to the session.
+     *  Android 13+ uses this link to display the lock screen media area widget. */
+    private fun postNotification(session: MediaSession, isPaused: Boolean) {
+        val stopAction = buildAction("Stop",   ACTION_STOP,  android.R.drawable.ic_menu_close_clear_cancel, 10)
+        val ppAction   = if (isPaused)
+            buildAction("Resume", ACTION_PLAY,  android.R.drawable.ic_media_play,  11)
+        else
+            buildAction("Pause",  ACTION_PAUSE, android.R.drawable.ic_media_pause, 12)
+
+        val piFlags = PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        val contentIntent = PendingIntent.getActivity(
+            ctx, 0,
+            ctx.packageManager.getLaunchIntentForPackage(ctx.packageName),
+            piFlags
+        )
+
+        // MediaStyle links the notification to the session — required for lock screen widget.
+        val style = Notification.MediaStyle()
+            .setMediaSession(session.sessionToken)
+            .setShowActionsInCompactView(0, 1)  // Stop and Pause/Resume in compact view
+
+        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+            Notification.Builder(ctx, CHANNEL_ID)
+        else
+            @Suppress("DEPRECATION") Notification.Builder(ctx)
+
+        builder.setStyle(style)
+            .setContentTitle(currentStage)
+            .setContentText(if (currentBpm > 0) "$currentBpm bpm" else "-- bpm")
+            .setSmallIcon(ctx.applicationInfo.icon)
+            .setVisibility(Notification.VISIBILITY_PUBLIC)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setContentIntent(contentIntent)
+            .addAction(stopAction)
+            .addAction(ppAction)
+
+        nm.notify(NOTIFICATION_ID, builder.build())
+    }
+
+    private fun buildAction(label: String, action: String, iconRes: Int, reqCode: Int): Notification.Action {
+        val pi = PendingIntent.getBroadcast(
+            ctx, reqCode,
+            Intent(action).setPackage(ctx.packageName),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            Notification.Action.Builder(Icon.createWithResource(ctx, iconRes), label, pi).build()
+        } else {
+            @Suppress("DEPRECATION")
+            Notification.Action.Builder(iconRes, label, pi).build()
+        }
+    }
+
+    private fun ensureChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            nm.getNotificationChannel(CHANNEL_ID) == null) {
+            NotificationChannel(CHANNEL_ID, "RHR Media Controls", NotificationManager.IMPORTANCE_LOW)
+                .apply {
+                    setShowBadge(false)
+                    setSound(null, null)
+                    enableVibration(false)
+                }
+                .also { nm.createNotificationChannel(it) }
+        }
+    }
+
+    private fun ensureReceiver() {
+        if (!receiverRegistered) {
+            val filter = IntentFilter().apply {
+                addAction(ACTION_PLAY)
+                addAction(ACTION_PAUSE)
+                addAction(ACTION_STOP)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                ctx.registerReceiver(transportReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                ctx.registerReceiver(transportReceiver, filter)
+            }
+            receiverRegistered = true
+        }
     }
 }
