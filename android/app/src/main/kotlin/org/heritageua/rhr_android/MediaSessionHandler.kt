@@ -143,8 +143,8 @@ class MediaSessionHandler(
                     override fun onPause() { mainHandler.post { channel.invokeMethod("onPause", null) } }
                     override fun onStop()  { mainHandler.post { channel.invokeMethod("onStop",  null) } }
                     // Samsung One UI only shows slots for PREV/PLAY/NEXT in the media widget.
-                    // We occupy the PREV (left) slot as a Stop button.
-                    override fun onSkipToPrevious() { mainHandler.post { channel.invokeMethod("onStop", null) } }
+                    // We occupy the NEXT (right) slot as a Stop button.
+                    override fun onSkipToNext() { mainHandler.post { channel.invokeMethod("onStop", null) } }
                 })
             }
         }
@@ -155,10 +155,10 @@ class MediaSessionHandler(
         val state   = if (isPaused) PlaybackState.STATE_PAUSED else PlaybackState.STATE_PLAYING
         // speed=1f while playing lets Android interpolate the progress bar between our 1s updates.
         val speed   = if (isPaused) 0f else 1f
-        // ACTION_SKIP_TO_PREVIOUS occupies Samsung's left (⏮) slot and is routed to onStop —
+        // ACTION_SKIP_TO_NEXT occupies Samsung's right (⏭) slot and is routed to onStop —
         // the only way to get a second visible button in One UI's 3-slot media widget.
         val actions = PlaybackState.ACTION_STOP or
-                      PlaybackState.ACTION_SKIP_TO_PREVIOUS or
+                      PlaybackState.ACTION_SKIP_TO_NEXT or
                       if (isPaused) PlaybackState.ACTION_PLAY else PlaybackState.ACTION_PAUSE
         session.setPlaybackState(
             PlaybackState.Builder()
