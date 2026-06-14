@@ -9,6 +9,7 @@ import '../services/training_service.dart';
 import '../services/audio_service.dart';
 import '../services/log_service.dart';
 import '../services/foreground_notification_service.dart';
+import '../services/media_session_service.dart';
 import '../models/session_log.dart';
 import '../models/training_plan.dart';
 import 'summary_screen.dart';
@@ -85,12 +86,15 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
 
       _tickSub = _trainer.tickStream.listen((t) {
         setState(() => _elapsed = t);
+        final stage = _trainer.currentStage.name;
+        final paused = _sessionState == SessionState.paused;
         ForegroundNotificationService.update(
-          stageName: _trainer.currentStage.name,
+          stageName: stage,
           bpm: _bpm,
           elapsedSeconds: t,
-          isPaused: _sessionState == SessionState.paused,
+          isPaused: paused,
         );
+        MediaSessionService.update(stageName: stage, bpm: _bpm, isPaused: paused);
       });
 
       _stateSub = _trainer.stateStream.listen((state) {
@@ -100,12 +104,15 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
           return;
         }
         if (state == SessionState.paused || state == SessionState.running) {
+          final stage = _trainer.currentStage.name;
+          final paused = state == SessionState.paused;
           ForegroundNotificationService.update(
-            stageName: _trainer.currentStage.name,
+            stageName: stage,
             bpm: _bpm,
             elapsedSeconds: _elapsed,
-            isPaused: state == SessionState.paused,
+            isPaused: paused,
           );
+          MediaSessionService.update(stageName: stage, bpm: _bpm, isPaused: paused);
         }
       });
 
@@ -133,6 +140,25 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
       };
       FlutterForegroundTask.addTaskDataCallback(_notifCallback!);
 
+      // Start Android MediaSession so controls appear in the lock screen media area.
+      MediaSessionService.init(
+        onPlay: () {
+          if (mounted && _trainer.state == SessionState.paused) {
+            setState(() => _trainer.resume());
+          }
+        },
+        onPause: () {
+          if (mounted) _trainer.pause();
+        },
+        onStop: () {
+          if (mounted) Navigator.pop(context);
+        },
+      );
+      await MediaSessionService.start(
+        stageName: _trainer.currentStage.name,
+        bpm: 0,
+      );
+
       setState(() {
         _connected = true;
         _initializing = false;
@@ -147,6 +173,7 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
 
   Future<void> _onFinish() async {
     await ForegroundNotificationService.stop();
+    await MediaSessionService.stop();
     final config = await ref.read(configProvider.future);
     final log = SessionLog(
       startTime: DateTime.now().subtract(Duration(seconds: _elapsed)),
@@ -211,6 +238,7 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
       FlutterForegroundTask.removeTaskDataCallback(_notifCallback!);
     }
     ForegroundNotificationService.stop();
+    MediaSessionService.stop();
     if (!_initializing) {
       _trainer.dispose();
       _audio.dispose();
