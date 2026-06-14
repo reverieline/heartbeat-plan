@@ -47,6 +47,73 @@ class SessionLog {
     return events.last.timestamp.difference(startTime);
   }
 
+  static SessionLog? fromText(String text) {
+    final lines = text.split('\n').where((l) => l.trim().isNotEmpty).toList();
+    if (lines.length < 2) return null;
+
+    DateTime? startTime;
+    if (lines[0].startsWith('session_start=')) {
+      startTime = DateTime.tryParse(lines[0].substring('session_start='.length).trim());
+    }
+    if (startTime == null) return null;
+
+    String deviceName = '';
+    String deviceAddress = '';
+    if (lines[1].startsWith('device=')) {
+      final parts = lines[1].substring('device='.length).split(' | address=');
+      deviceName = parts[0].trim();
+      deviceAddress = parts.length > 1 ? parts[1].trim() : '';
+    }
+
+    final events = <LogEvent>[];
+    for (int i = 2; i < lines.length; i++) {
+      final line = lines[i].trim();
+      if (!line.startsWith('[')) continue;
+      final closingBracket = line.indexOf(']');
+      if (closingBracket < 0) continue;
+      final ts = DateTime.tryParse(line.substring(1, closingBracket));
+      if (ts == null) continue;
+      final rest = line.substring(closingBracket + 2);
+
+      LogEvent? event;
+      if (rest.startsWith('bpm=')) {
+        final bpm = int.tryParse(rest.substring(4));
+        if (bpm != null) event = LogEvent(timestamp: ts, kind: LogEventKind.bpm, bpm: bpm);
+      } else if (rest.startsWith('stage_start=')) {
+        event = LogEvent(timestamp: ts, kind: LogEventKind.stageStart, stageName: rest.substring(12));
+      } else if (rest == 'device_connected') {
+        event = LogEvent(timestamp: ts, kind: LogEventKind.deviceConnected);
+      } else if (rest == 'device_disconnected') {
+        event = LogEvent(timestamp: ts, kind: LogEventKind.deviceDisconnected);
+      } else if (rest == 'device_reconnected') {
+        event = LogEvent(timestamp: ts, kind: LogEventKind.deviceReconnected);
+      } else if (rest == 'cue=speed_up') {
+        event = LogEvent(timestamp: ts, kind: LogEventKind.cueSpeedUp);
+      } else if (rest == 'cue=slow_down') {
+        event = LogEvent(timestamp: ts, kind: LogEventKind.cueSlowDown);
+      } else if (rest.startsWith('battery_level=')) {
+        final pct = int.tryParse(rest.substring(14).replaceAll('%', ''));
+        event = LogEvent(timestamp: ts, kind: LogEventKind.batteryLevel, batteryPercent: pct);
+      } else if (rest == 'session_start') {
+        event = LogEvent(timestamp: ts, kind: LogEventKind.sessionStart);
+      } else if (rest == 'session_end') {
+        event = LogEvent(timestamp: ts, kind: LogEventKind.sessionEnd);
+      } else if (rest == 'session_paused') {
+        event = LogEvent(timestamp: ts, kind: LogEventKind.sessionPaused);
+      } else if (rest == 'session_resumed') {
+        event = LogEvent(timestamp: ts, kind: LogEventKind.sessionResumed);
+      }
+      if (event != null) events.add(event);
+    }
+
+    return SessionLog(
+      startTime: startTime,
+      deviceName: deviceName,
+      deviceAddress: deviceAddress,
+      events: events,
+    );
+  }
+
   String toText() {
     final buf = StringBuffer();
     buf.writeln('session_start=${startTime.toIso8601String()}');
