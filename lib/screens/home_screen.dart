@@ -19,7 +19,7 @@ class HomeScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('RHR Trainer'),
+        title: const Text('Heartbeat Plan'),
         actions: [
           IconButton(icon: const Icon(Icons.history), onPressed: () {
             Navigator.push(context, MaterialPageRoute(builder: (_) => const HistoryScreen()));

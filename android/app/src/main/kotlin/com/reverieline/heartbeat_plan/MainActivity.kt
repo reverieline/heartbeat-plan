@@ -1,4 +1,4 @@
-package org.heritageua.rhr_android
+package com.reverieline.heartbeat_plan
 
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -9,7 +9,7 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
         val channel = MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
-            "org.heritageua.rhr_android/media_session"
+            "com.reverieline.heartbeat_plan/media_session"
         )
         channel.setMethodCallHandler(MediaSessionHandler(this, channel))
     }

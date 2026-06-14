@@ -1,4 +1,4 @@
-package org.heritageua.rhr_android
+package com.reverieline.heartbeat_plan
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -27,9 +27,9 @@ class MediaSessionHandler(
     companion object {
         private const val CHANNEL_ID      = "rhr_media_controls"
         private const val NOTIFICATION_ID  = 1002
-        private const val ACTION_PLAY      = "org.heritageua.rhr_android.MEDIA_PLAY"
-        private const val ACTION_PAUSE     = "org.heritageua.rhr_android.MEDIA_PAUSE"
-        private const val ACTION_STOP      = "org.heritageua.rhr_android.MEDIA_STOP"
+        private const val ACTION_PLAY      = "com.reverieline.heartbeat_plan.MEDIA_PLAY"
+        private const val ACTION_PAUSE     = "com.reverieline.heartbeat_plan.MEDIA_PAUSE"
+        private const val ACTION_STOP      = "com.reverieline.heartbeat_plan.MEDIA_STOP"
     }
 
     // Use applicationContext so Activity lifecycle doesn't affect the session.
@@ -126,7 +126,7 @@ class MediaSessionHandler(
 
     private fun getOrCreate(): MediaSession {
         if (mediaSession == null) {
-            mediaSession = MediaSession(ctx, "RHRTraining").apply {
+            mediaSession = MediaSession(ctx, "HeartbeatPlan").apply {
                 // Prevent our session from routing hardware media buttons (headphones, BT)
                 // away from music apps — we only need the lock screen widget, not button control.
                 setMediaButtonReceiver(null)
@@ -173,7 +173,7 @@ class MediaSessionHandler(
             MediaMetadata.Builder()
                 .putString(MediaMetadata.METADATA_KEY_TITLE,  currentStage)
                 .putString(MediaMetadata.METADATA_KEY_ARTIST, if (currentBpm > 0) "$currentBpm bpm" else "-- bpm")
-                .putString(MediaMetadata.METADATA_KEY_ALBUM,  "RHR Training")
+                .putString(MediaMetadata.METADATA_KEY_ALBUM,  "Heartbeat Plan")
                 // -1 hides the progress bar; positive value enables it.
                 .putLong(MediaMetadata.METADATA_KEY_DURATION, if (totalDurationMs > 0) totalDurationMs else -1L)
                 .build()
@@ -237,7 +237,7 @@ class MediaSessionHandler(
     private fun ensureChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
             nm.getNotificationChannel(CHANNEL_ID) == null) {
-            NotificationChannel(CHANNEL_ID, "RHR Media Controls", NotificationManager.IMPORTANCE_LOW)
+            NotificationChannel(CHANNEL_ID, "Heartbeat Plan Media Controls", NotificationManager.IMPORTANCE_LOW)
                 .apply {
                     setShowBadge(false)
                     setSound(null, null)

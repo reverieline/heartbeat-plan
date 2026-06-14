@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 class MediaSessionService {
   MediaSessionService._();
 
-  static const _channel = MethodChannel('org.heritageua.rhr_android/media_session');
+  static const _channel = MethodChannel('com.reverieline.heartbeat_plan/media_session');
 
   static void Function()? _onPlay;
   static void Function()? _onPause;

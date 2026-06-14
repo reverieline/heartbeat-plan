@@ -32,7 +32,7 @@ class ForegroundNotificationService {
     FlutterForegroundTask.init(
       androidNotificationOptions: AndroidNotificationOptions(
         channelId: 'rhr_training_session',
-        channelName: 'RHR Training Session',
+        channelName: 'Heartbeat Plan Training Session',
         channelDescription: 'Live BPM and stage info during a training session',
         channelImportance: NotificationChannelImportance.LOW,
         priority: NotificationPriority.LOW,

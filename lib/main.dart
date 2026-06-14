@@ -10,16 +10,16 @@ void main() {
   // Open the IsolateNameServer port so notification button presses from the
   // task isolate can reach addTaskDataCallback listeners in the UI isolate.
   FlutterForegroundTask.initCommunicationPort();
-  runApp(const ProviderScope(child: RhrApp()));
+  runApp(const ProviderScope(child: HeartbeatPlanApp()));
 }
 
-class RhrApp extends StatelessWidget {
-  const RhrApp({super.key});
+class HeartbeatPlanApp extends StatelessWidget {
+  const HeartbeatPlanApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'RHR Trainer',
+      title: 'Heartbeat Plan',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
