@@ -144,7 +144,17 @@ class AudioService {
   }
 
   void dispose() {
-    stop();
+    _queue = Future.value();
+    // Only stop TTS if it's actively mid-utterance. On some Android versions
+    // the completion callback fires before the audio buffer fully drains, so
+    // calling stop() when _ttsCompleter is already null would cut off the tail
+    // of the last announcement ("Workout comp…" instead of "Workout complete.").
+    if (_ttsCompleter != null) {
+      if (!_ttsCompleter!.isCompleted) _ttsCompleter!.complete();
+      _ttsCompleter = null;
+      _tts.stop();
+    }
+    _player.stop();
     _player.dispose();
   }
 }
