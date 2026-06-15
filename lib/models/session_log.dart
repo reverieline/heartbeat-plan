@@ -30,12 +30,14 @@ class LogEvent {
 }
 
 class SessionLog {
+  final String planName;
   final DateTime startTime;
   final String deviceName;
   final String deviceAddress;
   final List<LogEvent> events;
 
   SessionLog({
+    this.planName = '',
     required this.startTime,
     required this.deviceName,
     required this.deviceAddress,
@@ -47,6 +49,8 @@ class SessionLog {
     return events.last.timestamp.difference(startTime);
   }
 
+  bool get completed => events.any((e) => e.kind == LogEventKind.sessionEnd);
+
   static SessionLog? fromText(String text) {
     final lines = text.split('\n').where((l) => l.trim().isNotEmpty).toList();
     if (lines.length < 2) return null;
@@ -57,16 +61,24 @@ class SessionLog {
     }
     if (startTime == null) return null;
 
+    String planName = '';
+    int nextLine = 1;
+    if (lines[nextLine].startsWith('plan_name=')) {
+      planName = lines[nextLine].substring('plan_name='.length).trim();
+      nextLine++;
+    }
+
     String deviceName = '';
     String deviceAddress = '';
-    if (lines[1].startsWith('device=')) {
-      final parts = lines[1].substring('device='.length).split(' | address=');
+    if (nextLine < lines.length && lines[nextLine].startsWith('device=')) {
+      final parts = lines[nextLine].substring('device='.length).split(' | address=');
       deviceName = parts[0].trim();
       deviceAddress = parts.length > 1 ? parts[1].trim() : '';
+      nextLine++;
     }
 
     final events = <LogEvent>[];
-    for (int i = 2; i < lines.length; i++) {
+    for (int i = nextLine; i < lines.length; i++) {
       final line = lines[i].trim();
       if (!line.startsWith('[')) continue;
       final closingBracket = line.indexOf(']');
@@ -107,6 +119,7 @@ class SessionLog {
     }
 
     return SessionLog(
+      planName: planName,
       startTime: startTime,
       deviceName: deviceName,
       deviceAddress: deviceAddress,
@@ -117,6 +130,7 @@ class SessionLog {
   String toText() {
     final buf = StringBuffer();
     buf.writeln('session_start=${startTime.toIso8601String()}');
+    if (planName.isNotEmpty) buf.writeln('plan_name=$planName');
     buf.writeln('device=$deviceName | address=$deviceAddress');
     for (final e in events) {
       final ts = '[${e.timestamp.toIso8601String()}]';

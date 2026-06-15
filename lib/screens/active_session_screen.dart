@@ -32,6 +32,8 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
   int _bpm = 0;
   bool _connected = false;
   bool _initializing = true;
+  String _planName = '';
+  DateTime? _sessionStartTime;
   String? _error;
   int _elapsed = 0;
   SessionState _sessionState = SessionState.idle;
@@ -55,6 +57,7 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
     try {
       final config = await ref.read(configProvider.future);
       final planName = ref.read(selectedPlanNameProvider);
+      _planName = planName;
       final stages = await ref.read(planProvider(planName).future);
       final totalDuration = stages.fold<int>(0, (sum, s) => sum + s.durationSeconds);
       _audio = AudioService(
@@ -171,6 +174,7 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
         _sessionState = SessionState.running;
         _ttsEnabled = _audio.ttsEnabled;
         _beepsEnabled = _audio.beepsEnabled;
+        _sessionStartTime = DateTime.now();
       });
     } catch (e) {
       setState(() { _error = e.toString(); _initializing = false; });
@@ -182,7 +186,8 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
     await MediaSessionService.stop();
     final config = await ref.read(configProvider.future);
     final log = SessionLog(
-      startTime: DateTime.now().subtract(Duration(seconds: _elapsed)),
+      planName: _planName,
+      startTime: _sessionStartTime ?? DateTime.now().subtract(Duration(seconds: _elapsed)),
       deviceName: config.savedDeviceName ?? 'HR Monitor',
       deviceAddress: config.savedDeviceAddress ?? '',
       events: _trainer.logEvents.toList(),
@@ -222,6 +227,16 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
     ) ?? false;
 
     if (stop) {
+      final config = await ref.read(configProvider.future);
+      if (!mounted) return;
+      final log = SessionLog(
+        planName: _planName,
+        startTime: _sessionStartTime ?? DateTime.now().subtract(Duration(seconds: _elapsed)),
+        deviceName: config.savedDeviceName ?? 'HR Monitor',
+        deviceAddress: config.savedDeviceAddress ?? '',
+        events: _trainer.logEvents.toList(),
+      );
+      await LogService.saveLog(log);
       if (mounted) Navigator.pop(context);
     } else if (wasRunning) {
       _trainer.resume();

@@ -13,7 +13,7 @@ class HistoryScreen extends StatefulWidget {
 }
 
 class _HistoryScreenState extends State<HistoryScreen> {
-  List<File>? _logs;
+  List<(File, SessionLog?)>? _logs;
   final Set<String> _selected = {};
 
   bool get _selecting => _selected.isNotEmpty;
@@ -21,18 +21,39 @@ class _HistoryScreenState extends State<HistoryScreen> {
   @override
   void initState() {
     super.initState();
-    LogService.listLogs().then((files) {
-      if (mounted) setState(() => _logs = files);
-    });
+    _loadLogs();
   }
 
-  String _nameFromPath(String path) {
-    final name = path.split('/').last.replaceAll('.txt', '');
-    if (name.length == 15) {
-      return '${name.substring(0, 4)}-${name.substring(4, 6)}-${name.substring(6, 8)} '
-          '${name.substring(9, 11)}:${name.substring(11, 13)}:${name.substring(13, 15)}';
+  Future<void> _loadLogs() async {
+    final files = await LogService.listLogs();
+    final entries = <(File, SessionLog?)>[];
+    for (final file in files) {
+      try {
+        final content = await file.readAsString();
+        entries.add((file, SessionLog.fromText(content)));
+      } catch (_) {
+        entries.add((file, null));
+      }
     }
-    return name;
+    if (mounted) setState(() => _logs = entries);
+  }
+
+  String _titleFor(File file, SessionLog? log) {
+    if (log != null && log.planName.isNotEmpty) return log.planName;
+    return 'Training Session';
+  }
+
+  String _subtitleFor(SessionLog log) {
+    final dt = log.startTime;
+    final date =
+        '${dt.year.toString().padLeft(4, '0')}-'
+        '${dt.month.toString().padLeft(2, '0')}-'
+        '${dt.day.toString().padLeft(2, '0')} '
+        '${dt.hour.toString().padLeft(2, '0')}:'
+        '${dt.minute.toString().padLeft(2, '0')}';
+    final minutes = (log.duration.inSeconds / 60).round();
+    final status = log.completed ? 'Completed' : 'Interrupted';
+    return '$date · $minutes min · $status';
   }
 
   void _toggleSelect(String path) {
@@ -47,7 +68,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
   void _selectAll() {
     setState(() {
-      _selected.addAll(_logs!.map((f) => f.path));
+      _selected.addAll(_logs!.map((e) => e.$1.path));
     });
   }
 
@@ -74,12 +95,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
       await File(path).delete();
     }
 
-    final remaining = await LogService.listLogs();
-    if (!mounted) return;
-    setState(() {
-      _logs = remaining;
-      _selected.clear();
-    });
+    await _loadLogs();
+    if (mounted) setState(() => _selected.clear());
   }
 
   @override
@@ -100,7 +117,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 : ListView.builder(
                     itemCount: _logs!.length,
                     itemBuilder: (_, i) {
-                      final file = _logs![i];
+                      final (file, log) = _logs![i];
                       final isSelected = _selected.contains(file.path);
                       return ListTile(
                         leading: _selecting
@@ -109,11 +126,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                 onChanged: (_) => _toggleSelect(file.path),
                               )
                             : const Icon(Icons.fitness_center),
-                        title: Text(_nameFromPath(file.path)),
+                        title: Text(_titleFor(file, log)),
+                        subtitle: log != null ? Text(_subtitleFor(log)) : null,
                         selected: isSelected,
                         onTap: _selecting
                             ? () => _toggleSelect(file.path)
-                            : () => _showLog(context, file, i),
+                            : () => _showLog(context, file, log, i),
                         onLongPress: _selecting ? null : () => _toggleSelect(file.path),
                       );
                     },
@@ -146,16 +164,14 @@ class _HistoryScreenState extends State<HistoryScreen> {
     );
   }
 
-  void _showLog(BuildContext context, File file, int index) async {
-    final content = await file.readAsString();
-    final log = SessionLog.fromText(content);
-    if (!context.mounted) return;
-
+  void _showLog(BuildContext context, File file, SessionLog? log, int index) async {
     if (log == null) {
+      final content = await file.readAsString();
+      if (!context.mounted) return;
       showDialog<void>(
         context: context,
         builder: (_) => AlertDialog(
-          title: Text(_nameFromPath(file.path)),
+          title: const Text('Training Session'),
           content: SingleChildScrollView(child: Text(content, style: const TextStyle(fontFamily: 'monospace'))),
           actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close'))],
         ),
@@ -172,7 +188,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
         builder: (_) => SummaryScreen(
           log: log,
           profile: config.userProfile,
-          allLogs: List<File>.from(_logs!),
+          allLogs: _logs!.map((e) => e.$1).toList(),
           initialIndex: index,
         ),
       ),
