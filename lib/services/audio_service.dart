@@ -65,6 +65,17 @@ class AudioService {
     return _enqueue(() => _playToneSequence([920, 720, 620]));
   }
 
+  Future<void> playEndOfStageCue() {
+    if (!beepsEnabled) return Future.value();
+    return _enqueue(() async {
+      await _playTone(620, 300);
+      await Future<void>.delayed(const Duration(milliseconds: 700));
+      await _playTone(620, 300);
+      await Future<void>.delayed(const Duration(milliseconds: 700));
+      await _playTone(620, 1000);
+    });
+  }
+
   Future<void> stop() async {
     _queue = Future.value();
     // Unblock any in-progress _doSpeak before calling _tts.stop(),
@@ -101,6 +112,10 @@ class AudioService {
       await _player.play(BytesSource(_generateTone(freq, 160)), ctx: _beepContext);
       await Future<void>.delayed(const Duration(milliseconds: 240));
     }
+  }
+
+  Future<void> _playTone(int freqHz, int durationMs) async {
+    await _player.play(BytesSource(_generateTone(freqHz, durationMs)), ctx: _beepContext);
   }
 
   static Uint8List _generateTone(int hz, int durationMs) {

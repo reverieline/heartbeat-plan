@@ -6,6 +6,7 @@ enum LogEventKind {
   deviceReconnected,
   cueSpeedUp,
   cueSlowDown,
+  stageEndCue,
   batteryLevel,
   sessionStart,
   sessionEnd,
@@ -103,6 +104,8 @@ class SessionLog {
         event = LogEvent(timestamp: ts, kind: LogEventKind.cueSpeedUp);
       } else if (rest == 'cue=slow_down') {
         event = LogEvent(timestamp: ts, kind: LogEventKind.cueSlowDown);
+      } else if (rest == 'cue=stage_end') {
+        event = LogEvent(timestamp: ts, kind: LogEventKind.stageEndCue);
       } else if (rest.startsWith('battery_level=')) {
         final pct = int.tryParse(rest.substring(14).replaceAll('%', ''));
         event = LogEvent(timestamp: ts, kind: LogEventKind.batteryLevel, batteryPercent: pct);
@@ -149,6 +152,8 @@ class SessionLog {
           buf.writeln('$ts cue=speed_up');
         case LogEventKind.cueSlowDown:
           buf.writeln('$ts cue=slow_down');
+        case LogEventKind.stageEndCue:
+          buf.writeln('$ts cue=stage_end');
         case LogEventKind.batteryLevel:
           buf.writeln('$ts battery_level=${e.batteryPercent}%');
         case LogEventKind.sessionStart:

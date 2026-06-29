@@ -13,9 +13,11 @@ class TrainingService {
   int _stageIndex = 0;
   int _stageElapsedSeconds = 0;
   int _totalElapsedSeconds = 0;
+  bool _endOfStageCuePlayed = false;
   DateTime? _lastCueTime;
   SessionState _state = SessionState.idle;
   Timer? _ticker;
+  Timer? _endOfStageCueTimer;
   final _log = <LogEvent>[];
   DateTime? _startTime;
 
@@ -41,11 +43,18 @@ class TrainingService {
   });
 
   void start() {
+    _ticker?.cancel();
+    _endOfStageCueTimer?.cancel();
+    _stageIndex = 0;
+    _stageElapsedSeconds = 0;
+    _totalElapsedSeconds = 0;
     _startTime = DateTime.now();
     _state = SessionState.running;
     _stateController.add(_state);
     _log.add(LogEvent(timestamp: _startTime!, kind: LogEventKind.deviceConnected));
+    _endOfStageCuePlayed = false;
     _announceStage();
+    _scheduleEndOfStageCue();
     _ticker = Timer.periodic(const Duration(seconds: 1), _onTick);
   }
 
@@ -53,6 +62,8 @@ class TrainingService {
     if (_state != SessionState.running) return;
     _ticker?.cancel();
     _ticker = null;
+    _endOfStageCueTimer?.cancel();
+    _endOfStageCueTimer = null;
     _state = SessionState.paused;
     _stateController.add(_state);
     _log.add(LogEvent(timestamp: DateTime.now(), kind: LogEventKind.sessionPaused));
@@ -66,6 +77,7 @@ class TrainingService {
     _stateController.add(_state);
     _log.add(LogEvent(timestamp: DateTime.now(), kind: LogEventKind.sessionResumed));
     _lastCueTime = null;
+    _scheduleEndOfStageCue();
     _announceStage();
     _ticker = Timer.periodic(const Duration(seconds: 1), _onTick);
   }
@@ -98,12 +110,34 @@ class TrainingService {
       if (_stageIndex + 1 < stages.length) {
         _stageIndex++;
         _stageElapsedSeconds = 0;
+        _endOfStageCuePlayed = false;
+        _scheduleEndOfStageCue();
         _stageController.add(_stageIndex);
         _announceStage();
       } else {
         _finish();
       }
     }
+  }
+
+  void _scheduleEndOfStageCue() {
+    _endOfStageCueTimer?.cancel();
+    if (_endOfStageCuePlayed) return;
+    final delaySeconds = currentStage.durationSeconds - _stageElapsedSeconds - 3;
+    if (delaySeconds <= 0) {
+      _triggerEndOfStageCue();
+      return;
+    }
+    _endOfStageCueTimer = Timer(Duration(seconds: delaySeconds), _triggerEndOfStageCue);
+  }
+
+  void _triggerEndOfStageCue() {
+    if (_state != SessionState.running || _endOfStageCuePlayed) return;
+    _endOfStageCueTimer?.cancel();
+    _endOfStageCueTimer = null;
+    _endOfStageCuePlayed = true;
+    _log.add(LogEvent(timestamp: DateTime.now(), kind: LogEventKind.stageEndCue));
+    audio.playEndOfStageCue();
   }
 
   void _checkCue(int bpm) {
@@ -138,6 +172,8 @@ class TrainingService {
 
   Future<void> _finish() async {
     _ticker?.cancel();
+    _endOfStageCueTimer?.cancel();
+    _endOfStageCueTimer = null;
     _state = SessionState.finished;
     _log.add(LogEvent(timestamp: DateTime.now(), kind: LogEventKind.sessionEnd));
     await audio.speak('Workout complete.');
@@ -146,6 +182,7 @@ class TrainingService {
 
   void dispose() {
     _ticker?.cancel();
+    _endOfStageCueTimer?.cancel();
     _stateController.close();
     _stageController.close();
     _tickController.close();
