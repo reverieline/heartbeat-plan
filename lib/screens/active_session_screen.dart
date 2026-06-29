@@ -28,10 +28,13 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
   BleService? _ble;
   late TrainingService _trainer;
   late AudioService _audio;
+  late int _totalDuration;
 
   int _bpm = 0;
   bool _connected = false;
   bool _initializing = true;
+  bool _sessionStarted = false;
+  bool _sessionStarting = false;
   String _planName = '';
   DateTime? _sessionStartTime;
   String? _error;
@@ -59,7 +62,7 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
       final planName = ref.read(selectedPlanNameProvider);
       _planName = planName;
       final stages = await ref.read(planProvider(planName).future);
-      final totalDuration = stages.fold<int>(0, (sum, s) => sum + s.durationSeconds);
+      _totalDuration = stages.fold<int>(0, (sum, s) => sum + s.durationSeconds);
       _audio = AudioService(
         ttsEnabled: config.ttsEnabled,
         beepsEnabled: config.beepsEnabled,
@@ -74,57 +77,92 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
         audio: _audio,
         beepCooldownSeconds: config.beepCooldownSeconds,
       );
+      _attachTrainerListeners();
+      _wireBleListenersIfAvailable();
 
-      await ref.read(bleConnectionProvider.notifier)
-          .waitForConnection(timeout: const Duration(seconds: 40));
+      final bleState = ref.read(bleConnectionProvider);
+      if (bleState.status == BleStatus.connected) {
+        await _startWorkout(force: false);
+      }
 
-      _ble = ref.read(bleConnectionProvider.notifier).service!;
-      _trainer.start();
-
-      _hrSub = _ble!.hrStream.listen((data) {
-        setState(() => _bpm = data.bpm);
-        _trainer.handleBpm(data.bpm);
+      if (!mounted) return;
+      setState(() {
+        _initializing = false;
+        _connected = bleState.status == BleStatus.connected;
+        _ttsEnabled = _audio.ttsEnabled;
+        _beepsEnabled = _audio.beepsEnabled;
       });
 
-      _connSub = _ble!.connectionStream.listen((connected) {
-        setState(() => _connected = connected);
-        if (!connected) _trainer.handleDisconnect();
-        if (connected) _trainer.handleReconnect(null);
-      });
+    } catch (e) {
+      if (mounted) {
+        setState(() { _error = e.toString(); _initializing = false; });
+      }
+    }
+  }
 
-      _tickSub = _trainer.tickStream.listen((t) {
-        setState(() => _elapsed = t);
+  void _attachTrainerListeners() {
+    _tickSub ??= _trainer.tickStream.listen((t) {
+      if (!mounted) return;
+      setState(() => _elapsed = t);
+      final stage = _trainer.currentStage.name;
+      final paused = _sessionState == SessionState.paused;
+      ForegroundNotificationService.update(
+        stageName: stage,
+        bpm: _bpm,
+        elapsedSeconds: t,
+        isPaused: paused,
+      );
+      MediaSessionService.update(stageName: stage, bpm: _bpm, elapsedSeconds: t, isPaused: paused);
+    });
+
+    _stateSub ??= _trainer.stateStream.listen((state) {
+      if (!mounted) return;
+      setState(() => _sessionState = state);
+      if (state == SessionState.finished) {
+        _onFinish();
+        return;
+      }
+      if (state == SessionState.paused || state == SessionState.running) {
         final stage = _trainer.currentStage.name;
-        final paused = _sessionState == SessionState.paused;
+        final paused = state == SessionState.paused;
         ForegroundNotificationService.update(
           stageName: stage,
           bpm: _bpm,
-          elapsedSeconds: t,
+          elapsedSeconds: _elapsed,
           isPaused: paused,
         );
-        MediaSessionService.update(stageName: stage, bpm: _bpm, elapsedSeconds: t, isPaused: paused);
-      });
+        MediaSessionService.update(stageName: stage, bpm: _bpm, elapsedSeconds: _elapsed, isPaused: paused);
+      }
+    });
+  }
 
-      _stateSub = _trainer.stateStream.listen((state) {
-        setState(() => _sessionState = state);
-        if (state == SessionState.finished) {
-          _onFinish();
-          return;
-        }
-        if (state == SessionState.paused || state == SessionState.running) {
-          final stage = _trainer.currentStage.name;
-          final paused = state == SessionState.paused;
-          ForegroundNotificationService.update(
-            stageName: stage,
-            bpm: _bpm,
-            elapsedSeconds: _elapsed,
-            isPaused: paused,
-          );
-          MediaSessionService.update(stageName: stage, bpm: _bpm, elapsedSeconds: _elapsed, isPaused: paused);
-        }
-      });
+  void _wireBleListenersIfAvailable() {
+    final ble = ref.read(bleConnectionProvider.notifier).service;
+    if (ble == null) return;
+    if (_ble != ble) _ble = ble;
+    _hrSub ??= ble.hrStream.listen((data) {
+      if (!mounted) return;
+      setState(() => _bpm = data.bpm);
+      _trainer.handleBpm(data.bpm);
+    });
 
-      // Start foreground service notification.
+    _connSub ??= ble.connectionStream.listen((connected) {
+      if (!mounted) return;
+      setState(() => _connected = connected);
+      if (!connected) _trainer.handleDisconnect();
+      if (connected) _trainer.handleReconnect(null);
+    });
+
+    if (ref.read(bleConnectionProvider).status == BleStatus.connected) {
+      _connected = true;
+    }
+  }
+
+  Future<void> _startWorkout({required bool force}) async {
+    if (_sessionStarted || _sessionStarting) return;
+    _sessionStarting = true;
+    try {
+      _wireBleListenersIfAvailable();
       await ForegroundNotificationService.requestPermission();
       await ForegroundNotificationService.start(
         stageName: _trainer.currentStage.name,
@@ -132,23 +170,6 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
         elapsedSeconds: 0,
       );
 
-      // Listen for Pause/Resume and Stop button presses from the notification.
-      _notifCallback = (data) {
-        if (!mounted) return;
-        if (data == 'pause_resume') {
-          if (_trainer.state == SessionState.paused) {
-            setState(() => _trainer.resume());
-          } else {
-            _trainer.pause();
-          }
-        } else if (data == 'stop') {
-          // Immediate stop from notification — no confirmation dialog.
-          Navigator.pop(context);
-        }
-      };
-      FlutterForegroundTask.addTaskDataCallback(_notifCallback!);
-
-      // Start Android MediaSession so controls appear in the lock screen media area.
       MediaSessionService.init(
         onPlay: () {
           if (mounted && _trainer.state == SessionState.paused) {
@@ -165,19 +186,26 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
       await MediaSessionService.start(
         stageName: _trainer.currentStage.name,
         bpm: 0,
-        totalDurationSeconds: totalDuration,
+        totalDurationSeconds: _totalDuration,
       );
 
+      _trainer.start();
+      if (!mounted) return;
       setState(() {
-        _connected = true;
+        _connected = ref.read(bleConnectionProvider).status == BleStatus.connected;
         _initializing = false;
+        _sessionStarted = true;
         _sessionState = SessionState.running;
         _ttsEnabled = _audio.ttsEnabled;
         _beepsEnabled = _audio.beepsEnabled;
         _sessionStartTime = DateTime.now();
       });
     } catch (e) {
-      setState(() { _error = e.toString(); _initializing = false; });
+      if (mounted) {
+        setState(() { _error = e.toString(); _initializing = false; });
+      }
+    } finally {
+      _sessionStarting = false;
     }
   }
 
@@ -278,10 +306,19 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final bleState = ref.watch(bleConnectionProvider);
+    ref.listen<BleConnectionState>(bleConnectionProvider, (_, next) {
+      if (!mounted || _initializing) return;
+      _wireBleListenersIfAvailable();
+      if (!_sessionStarted && !_sessionStarting && next.status == BleStatus.connected) {
+        unawaited(_startWorkout(force: false));
+      }
+    });
+
     if (_initializing) {
       return const Scaffold(body: Center(child: Column(
         mainAxisSize: MainAxisSize.min,
-        children: [CircularProgressIndicator(), SizedBox(height: 16), Text('Connecting...')],
+        children: [CircularProgressIndicator(), SizedBox(height: 16), Text('Preparing...')],
       )));
     }
 
@@ -299,11 +336,62 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
       );
     }
 
+    if (!_sessionStarted) {
+      return Scaffold(
+        appBar: AppBar(
+          title: Text(bleState.status == BleStatus.connected
+              ? 'Sensor ready'
+              : 'Waiting for HR monitor'),
+          leading: IconButton(
+            icon: const Icon(Icons.close),
+            tooltip: 'Back',
+            onPressed: () => Navigator.pop(context),
+          ),
+        ),
+        body: SafeArea(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const CircularProgressIndicator(),
+                  const SizedBox(height: 20),
+                  Text(
+                    bleState.status == BleStatus.connected
+                        ? 'HR monitor connected'
+                        : bleState.status == BleStatus.connecting
+                            ? 'Waiting for HR monitor…'
+                            : 'HR monitor disconnected',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'The app will keep trying to connect in the background. You can start the workout now without the sensor.',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: 24),
+                  FilledButton.icon(
+                    onPressed: _sessionStarting
+                        ? null
+                        : () => unawaited(_startWorkout(force: true)),
+                    icon: const Icon(Icons.play_arrow),
+                    label: const Text('Start without sensor'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     final stage = _trainer.currentStage;
     final stageProgress = _trainer.stageElapsedSeconds / stage.durationSeconds;
     final isPaused = _sessionState == SessionState.paused;
-    final totalDuration =
-        _trainer.stages.fold<int>(0, (sum, s) => sum + s.durationSeconds);
+    final totalDuration = _totalDuration;
 
     return PopScope(
       canPop: false,
