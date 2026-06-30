@@ -151,12 +151,12 @@ class TrainingService {
       _lastCueTime = now;
       _log.add(LogEvent(timestamp: now, kind: LogEventKind.cueSlowDown));
       audio.playSlowDownCue();
-      audio.speak('Slow down');
+      audio.speakSpeedCue('Slow down');
     } else if (stage.target.isBelow(bpm)) {
       _lastCueTime = now;
       _log.add(LogEvent(timestamp: now, kind: LogEventKind.cueSpeedUp));
       audio.playSpeedUpCue();
-      audio.speak('Speed up');
+      audio.speakSpeedCue('Speed up');
     }
   }
 

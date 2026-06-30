@@ -8,6 +8,7 @@ class AudioService {
   final FlutterTts _tts = FlutterTts();
   final AudioPlayer _player = AudioPlayer();
   bool ttsEnabled;
+  bool speedCueEnabled;
   bool beepsEnabled;
 
   // Serial queue: each task is chained after the previous one completes.
@@ -26,6 +27,7 @@ class AudioService {
 
   AudioService({
     this.ttsEnabled = true,
+    this.speedCueEnabled = true,
     this.beepsEnabled = true,
     Map<String, String>? ttsVoice,
     double ttsSpeed = 0.5,
@@ -52,6 +54,11 @@ class AudioService {
 
   Future<void> speak(String text) {
     if (!ttsEnabled) return Future.value();
+    return _enqueue(() => _doSpeak(text));
+  }
+
+  Future<void> speakSpeedCue(String text) {
+    if (!speedCueEnabled) return Future.value();
     return _enqueue(() => _doSpeak(text));
   }
 

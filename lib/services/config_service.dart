@@ -7,6 +7,7 @@ const _kDeviceName = 'device_name';
 const _kSelectedPlan = 'selected_plan';
 const _kBeepCooldown = 'beep_cooldown_seconds';
 const _kTtsEnabled = 'tts_enabled';
+const _kSpeedCueTtsEnabled = 'speed_cue_tts_enabled';
 const _kBeepsEnabled = 'beeps_enabled';
 const _kTtsVoiceName = 'tts_voice_name';
 const _kTtsVoiceLocale = 'tts_voice_locale';
@@ -29,6 +30,10 @@ class ConfigService {
   String get selectedPlan => _prefs.getString(_kSelectedPlan) ?? 'default';
   int get beepCooldownSeconds => _prefs.getInt(_kBeepCooldown) ?? 20;
   bool get ttsEnabled => _prefs.getBool(_kTtsEnabled) ?? true;
+  bool get speedCueTtsEnabled =>
+      _prefs.getBool(_kSpeedCueTtsEnabled) ??
+      _prefs.getBool(_kTtsEnabled) ??
+      true;
   bool get beepsEnabled => _prefs.getBool(_kBeepsEnabled) ?? true;
   String? get ttsVoiceName => _prefs.getString(_kTtsVoiceName);
   String? get ttsVoiceLocale => _prefs.getString(_kTtsVoiceLocale);
@@ -50,6 +55,10 @@ class ConfigService {
 
   Future<void> setTtsEnabled(bool enabled) async {
     await _prefs.setBool(_kTtsEnabled, enabled);
+  }
+
+  Future<void> setSpeedCueTtsEnabled(bool enabled) async {
+    await _prefs.setBool(_kSpeedCueTtsEnabled, enabled);
   }
 
   Future<void> setBeepsEnabled(bool enabled) async {

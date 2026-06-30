@@ -19,6 +19,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   String _sex = 'male';
 
   bool _ttsEnabled = true;
+  bool _speedCueTtsEnabled = true;
   bool _beepsEnabled = true;
   double _ttsSpeed = 0.5;
   double _ttsPitch = 1.0;
@@ -47,6 +48,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     setState(() {
       _sex = p.sex;
       _ttsEnabled = config.ttsEnabled;
+      _speedCueTtsEnabled = config.speedCueTtsEnabled;
       _beepsEnabled = config.beepsEnabled;
       _ttsSpeed = config.ttsSpeed;
       _ttsPitch = config.ttsPitch;
@@ -64,10 +66,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       if (raw == null) return [];
       final all = (raw as List)
           .whereType<Map>()
-          .map((v) => {
-                'name': v['name']?.toString() ?? '',
-                'locale': v['locale']?.toString() ?? '',
-              })
+          .map(
+            (v) => {
+              'name': v['name']?.toString() ?? '',
+              'locale': v['locale']?.toString() ?? '',
+            },
+          )
           .where((v) => v['name']!.isNotEmpty)
           .toList();
       final english = all.where((v) => v['locale']!.startsWith('en')).toList();
@@ -88,6 +92,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
     await config.saveUserProfile(profile);
     await config.setTtsEnabled(_ttsEnabled);
+    await config.setSpeedCueTtsEnabled(_speedCueTtsEnabled);
     await config.setBeepsEnabled(_beepsEnabled);
     await config.setTtsSpeed(_ttsSpeed);
     await config.setTtsPitch(_ttsPitch);
@@ -115,75 +120,95 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       body: SafeArea(
         top: false,
         child: !_loaded
-          ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                Text('User Profile', style: Theme.of(context).textTheme.titleLarge),
-                const SizedBox(height: 8),
-                _field('Age', _ageCtrl, TextInputType.number),
-                _field('Weight (kg)', _weightCtrl,
-                    const TextInputType.numberWithOptions(decimal: true)),
-                _field('Resting HR', _restHrCtrl, TextInputType.number),
-                _field('Max HR', _maxHrCtrl, TextInputType.number),
-                const SizedBox(height: 8),
-                DropdownButtonFormField<String>(
-                  initialValue: _sex,
-                  decoration: const InputDecoration(
-                      labelText: 'Sex', border: OutlineInputBorder()),
-                  items: const [
-                    DropdownMenuItem(value: 'male', child: Text('Male')),
-                    DropdownMenuItem(value: 'female', child: Text('Female')),
-                    DropdownMenuItem(value: 'other', child: Text('Other')),
+            ? const Center(child: CircularProgressIndicator())
+            : ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  Text(
+                    'User Profile',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 8),
+                  _field('Age', _ageCtrl, TextInputType.number),
+                  _field(
+                    'Weight (kg)',
+                    _weightCtrl,
+                    const TextInputType.numberWithOptions(decimal: true),
+                  ),
+                  _field('Resting HR', _restHrCtrl, TextInputType.number),
+                  _field('Max HR', _maxHrCtrl, TextInputType.number),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<String>(
+                    initialValue: _sex,
+                    decoration: const InputDecoration(
+                      labelText: 'Sex',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'male', child: Text('Male')),
+                      DropdownMenuItem(value: 'female', child: Text('Female')),
+                      DropdownMenuItem(value: 'other', child: Text('Other')),
+                    ],
+                    onChanged: (v) => setState(() => _sex = v ?? 'male'),
+                  ),
+                  const SizedBox(height: 16),
+                  Text('Audio', style: Theme.of(context).textTheme.titleLarge),
+                  SwitchListTile(
+                    title: const Text('Sound Beeps'),
+                    subtitle: const Text(
+                      'Ascending/descending tones for pace cues',
+                    ),
+                    value: _beepsEnabled,
+                    onChanged: (v) => setState(() => _beepsEnabled = v),
+                  ),
+                  SwitchListTile(
+                    title: const Text('Voice Prompts'),
+                    subtitle: const Text(
+                      'Stage announcements, pause/resume, disconnect/reconnect, workout complete',
+                    ),
+                    value: _ttsEnabled,
+                    onChanged: (v) => setState(() => _ttsEnabled = v),
+                  ),
+                  SwitchListTile(
+                    title: const Text('Speed Cue Speech'),
+                    subtitle: const Text(
+                      '“Speed up” / “Slow down” spoken cues during coaching',
+                    ),
+                    value: _speedCueTtsEnabled,
+                    onChanged: (v) => setState(() => _speedCueTtsEnabled = v),
+                  ),
+                  if (_ttsEnabled || _speedCueTtsEnabled) ...[
+                    const SizedBox(height: 8),
+                    _VoiceDropdown(
+                      voices: _availableVoices,
+                      selectedName: _ttsVoiceName,
+                      onChanged: (name, locale) => setState(() {
+                        _ttsVoiceName = name;
+                        _ttsVoiceLocale = locale;
+                      }),
+                    ),
+                    const SizedBox(height: 8),
+                    _SliderRow(
+                      label: 'Speech Speed',
+                      value: _ttsSpeed,
+                      min: 0.1,
+                      max: 1.0,
+                      divisions: 9,
+                      displayValue: _ttsSpeed.toStringAsFixed(1),
+                      onChanged: (v) => setState(() => _ttsSpeed = v),
+                    ),
+                    _SliderRow(
+                      label: 'Pitch',
+                      value: _ttsPitch,
+                      min: 0.5,
+                      max: 2.0,
+                      divisions: 15,
+                      displayValue: _ttsPitch.toStringAsFixed(1),
+                      onChanged: (v) => setState(() => _ttsPitch = v),
+                    ),
                   ],
-                  onChanged: (v) => setState(() => _sex = v ?? 'male'),
-                ),
-                const SizedBox(height: 16),
-                Text('Audio', style: Theme.of(context).textTheme.titleLarge),
-                SwitchListTile(
-                  title: const Text('Sound Beeps'),
-                  subtitle: const Text('Ascending/descending tones for pace cues'),
-                  value: _beepsEnabled,
-                  onChanged: (v) => setState(() => _beepsEnabled = v),
-                ),
-                SwitchListTile(
-                  title: const Text('Text-to-Speech Coaching'),
-                  subtitle: const Text('Voice announcements for stages and cues'),
-                  value: _ttsEnabled,
-                  onChanged: (v) => setState(() => _ttsEnabled = v),
-                ),
-                if (_ttsEnabled) ...[
-                  const SizedBox(height: 8),
-                  _VoiceDropdown(
-                    voices: _availableVoices,
-                    selectedName: _ttsVoiceName,
-                    onChanged: (name, locale) => setState(() {
-                      _ttsVoiceName = name;
-                      _ttsVoiceLocale = locale;
-                    }),
-                  ),
-                  const SizedBox(height: 8),
-                  _SliderRow(
-                    label: 'Speech Speed',
-                    value: _ttsSpeed,
-                    min: 0.1,
-                    max: 1.0,
-                    divisions: 9,
-                    displayValue: _ttsSpeed.toStringAsFixed(1),
-                    onChanged: (v) => setState(() => _ttsSpeed = v),
-                  ),
-                  _SliderRow(
-                    label: 'Pitch',
-                    value: _ttsPitch,
-                    min: 0.5,
-                    max: 2.0,
-                    divisions: 15,
-                    displayValue: _ttsPitch.toStringAsFixed(1),
-                    onChanged: (v) => setState(() => _ttsPitch = v),
-                  ),
                 ],
-              ],
-            ),
+              ),
       ),
     );
   }
@@ -194,8 +219,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       child: TextField(
         controller: ctrl,
         keyboardType: type,
-        decoration:
-            InputDecoration(labelText: label, border: const OutlineInputBorder()),
+        decoration: InputDecoration(
+          labelText: label,
+          border: const OutlineInputBorder(),
+        ),
       ),
     );
   }
@@ -216,25 +243,31 @@ class _VoiceDropdown extends StatelessWidget {
   Widget build(BuildContext context) {
     final items = <DropdownMenuItem<String>>[
       const DropdownMenuItem(value: null, child: Text('System default')),
-      ...voices.map((v) => DropdownMenuItem(
-            value: v['name'],
-            child: Text(v['name']!, overflow: TextOverflow.ellipsis),
-          )),
+      ...voices.map(
+        (v) => DropdownMenuItem(
+          value: v['name'],
+          child: Text(v['name']!, overflow: TextOverflow.ellipsis),
+        ),
+      ),
     ];
 
-    final validValue =
-        voices.any((v) => v['name'] == selectedName) ? selectedName : null;
+    final validValue = voices.any((v) => v['name'] == selectedName)
+        ? selectedName
+        : null;
 
     return DropdownButtonFormField<String>(
       initialValue: validValue,
-      decoration:
-          const InputDecoration(labelText: 'Voice', border: OutlineInputBorder()),
+      decoration: const InputDecoration(
+        labelText: 'Voice',
+        border: OutlineInputBorder(),
+      ),
       isExpanded: true,
       items: items,
       onChanged: (name) {
-        final locale = voices
-            .firstWhere((v) => v['name'] == name,
-                orElse: () => {'name': '', 'locale': ''})['locale'];
+        final locale = voices.firstWhere(
+          (v) => v['name'] == name,
+          orElse: () => {'name': '', 'locale': ''},
+        )['locale'];
         onChanged(name, locale);
       },
     );
@@ -279,9 +312,11 @@ class _SliderRow extends StatelessWidget {
         ),
         SizedBox(
           width: 36,
-          child: Text(displayValue,
-              style: Theme.of(context).textTheme.bodyMedium,
-              textAlign: TextAlign.end),
+          child: Text(
+            displayValue,
+            style: Theme.of(context).textTheme.bodyMedium,
+            textAlign: TextAlign.end,
+          ),
         ),
       ],
     );

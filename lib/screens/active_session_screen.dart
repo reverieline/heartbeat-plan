@@ -21,7 +21,8 @@ class ActiveSessionScreen extends ConsumerStatefulWidget {
   const ActiveSessionScreen({super.key});
 
   @override
-  ConsumerState<ActiveSessionScreen> createState() => _ActiveSessionScreenState();
+  ConsumerState<ActiveSessionScreen> createState() =>
+      _ActiveSessionScreenState();
 }
 
 class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
@@ -41,6 +42,7 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
   int _elapsed = 0;
   SessionState _sessionState = SessionState.idle;
   bool _ttsEnabled = true;
+  bool _speedCueEnabled = true;
   bool _beepsEnabled = true;
   bool _keepDisplayOn = false;
 
@@ -65,9 +67,13 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
       _totalDuration = stages.fold<int>(0, (sum, s) => sum + s.durationSeconds);
       _audio = AudioService(
         ttsEnabled: config.ttsEnabled,
+        speedCueEnabled: config.speedCueTtsEnabled,
         beepsEnabled: config.beepsEnabled,
         ttsVoice: config.ttsVoiceName != null
-            ? {'name': config.ttsVoiceName!, 'locale': config.ttsVoiceLocale ?? ''}
+            ? {
+                'name': config.ttsVoiceName!,
+                'locale': config.ttsVoiceLocale ?? '',
+              }
             : null,
         ttsSpeed: config.ttsSpeed,
         ttsPitch: config.ttsPitch,
@@ -90,12 +96,15 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
         _initializing = false;
         _connected = bleState.status == BleStatus.connected;
         _ttsEnabled = _audio.ttsEnabled;
+        _speedCueEnabled = _audio.speedCueEnabled;
         _beepsEnabled = _audio.beepsEnabled;
       });
-
     } catch (e) {
       if (mounted) {
-        setState(() { _error = e.toString(); _initializing = false; });
+        setState(() {
+          _error = e.toString();
+          _initializing = false;
+        });
       }
     }
   }
@@ -112,7 +121,12 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
         elapsedSeconds: t,
         isPaused: paused,
       );
-      MediaSessionService.update(stageName: stage, bpm: _bpm, elapsedSeconds: t, isPaused: paused);
+      MediaSessionService.update(
+        stageName: stage,
+        bpm: _bpm,
+        elapsedSeconds: t,
+        isPaused: paused,
+      );
     });
 
     _stateSub ??= _trainer.stateStream.listen((state) {
@@ -131,7 +145,12 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
           elapsedSeconds: _elapsed,
           isPaused: paused,
         );
-        MediaSessionService.update(stageName: stage, bpm: _bpm, elapsedSeconds: _elapsed, isPaused: paused);
+        MediaSessionService.update(
+          stageName: stage,
+          bpm: _bpm,
+          elapsedSeconds: _elapsed,
+          isPaused: paused,
+        );
       }
     });
   }
@@ -192,17 +211,22 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
       _trainer.start();
       if (!mounted) return;
       setState(() {
-        _connected = ref.read(bleConnectionProvider).status == BleStatus.connected;
+        _connected =
+            ref.read(bleConnectionProvider).status == BleStatus.connected;
         _initializing = false;
         _sessionStarted = true;
         _sessionState = SessionState.running;
         _ttsEnabled = _audio.ttsEnabled;
+        _speedCueEnabled = _audio.speedCueEnabled;
         _beepsEnabled = _audio.beepsEnabled;
         _sessionStartTime = DateTime.now();
       });
     } catch (e) {
       if (mounted) {
-        setState(() { _error = e.toString(); _initializing = false; });
+        setState(() {
+          _error = e.toString();
+          _initializing = false;
+        });
       }
     } finally {
       _sessionStarting = false;
@@ -215,7 +239,9 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
     final config = await ref.read(configProvider.future);
     final log = SessionLog(
       planName: _planName,
-      startTime: _sessionStartTime ?? DateTime.now().subtract(Duration(seconds: _elapsed)),
+      startTime:
+          _sessionStartTime ??
+          DateTime.now().subtract(Duration(seconds: _elapsed)),
       deviceName: config.savedDeviceName ?? 'HR Monitor',
       deviceAddress: config.savedDeviceAddress ?? '',
       events: _trainer.logEvents.toList(),
@@ -224,7 +250,9 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
     if (mounted) {
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => SummaryScreen(log: log, profile: config.userProfile)),
+        MaterialPageRoute(
+          builder: (_) => SummaryScreen(log: log, profile: config.userProfile),
+        ),
       );
     }
   }
@@ -234,32 +262,38 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
     if (wasRunning) await _trainer.pause();
 
     if (!mounted) return;
-    final stop = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Stop Training?'),
-        content: const Text('This will end your current session and return to the home screen.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Keep Going'),
+    final stop =
+        await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Stop Training?'),
+            content: const Text(
+              'This will end your current session and return to the home screen.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Keep Going'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                style: TextButton.styleFrom(foregroundColor: Colors.red),
+                child: const Text('Stop Training'),
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Stop Training'),
-          ),
-        ],
-      ),
-    ) ?? false;
+        ) ??
+        false;
 
     if (stop) {
       final config = await ref.read(configProvider.future);
       if (!mounted) return;
       final log = SessionLog(
         planName: _planName,
-        startTime: _sessionStartTime ?? DateTime.now().subtract(Duration(seconds: _elapsed)),
+        startTime:
+            _sessionStartTime ??
+            DateTime.now().subtract(Duration(seconds: _elapsed)),
         deviceName: config.savedDeviceName ?? 'HR Monitor',
         deviceAddress: config.savedDeviceAddress ?? '',
         events: _trainer.logEvents.toList(),
@@ -310,38 +344,55 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
     ref.listen<BleConnectionState>(bleConnectionProvider, (_, next) {
       if (!mounted || _initializing) return;
       _wireBleListenersIfAvailable();
-      if (!_sessionStarted && !_sessionStarting && next.status == BleStatus.connected) {
+      if (!_sessionStarted &&
+          !_sessionStarting &&
+          next.status == BleStatus.connected) {
         unawaited(_startWorkout(force: false));
       }
     });
 
     if (_initializing) {
-      return const Scaffold(body: Center(child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [CircularProgressIndicator(), SizedBox(height: 16), Text('Preparing...')],
-      )));
+      return const Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text('Preparing...'),
+            ],
+          ),
+        ),
+      );
     }
 
     if (_error != null) {
       return Scaffold(
         appBar: AppBar(title: const Text('Session')),
-        body: Center(child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('Error: $_error'),
-            const SizedBox(height: 16),
-            ElevatedButton(onPressed: () => Navigator.pop(context), child: const Text('Back')),
-          ],
-        )),
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Error: $_error'),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Back'),
+              ),
+            ],
+          ),
+        ),
       );
     }
 
     if (!_sessionStarted) {
       return Scaffold(
         appBar: AppBar(
-          title: Text(bleState.status == BleStatus.connected
-              ? 'Sensor ready'
-              : 'Waiting for HR monitor'),
+          title: Text(
+            bleState.status == BleStatus.connected
+                ? 'Sensor ready'
+                : 'Waiting for HR monitor',
+          ),
           leading: IconButton(
             icon: const Icon(Icons.close),
             tooltip: 'Back',
@@ -361,8 +412,8 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
                     bleState.status == BleStatus.connected
                         ? 'HR monitor connected'
                         : bleState.status == BleStatus.connecting
-                            ? 'Waiting for HR monitor…'
-                            : 'HR monitor disconnected',
+                        ? 'Waiting for HR monitor…'
+                        : 'HR monitor disconnected',
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
@@ -412,95 +463,139 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
         body: SafeArea(
           top: false,
           child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            children: [
-              Text(_formatTime(_elapsed),
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(fontSize: 48)),
-              const SizedBox(height: 24),
-              Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 340),
-                  child: _TrainingProgressRing(
-                    stages: _trainer.stages,
-                    totalElapsedSeconds: _trainer.totalElapsedSeconds,
-                    totalDurationSeconds: totalDuration,
-                    currentStageIndex: _trainer.currentStageIndex,
-                    dimmed: isPaused,
-                    child: _BpmDisplay(
-                        bpm: _bpm, target: stage.target, dimmed: isPaused),
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              children: [
+                Text(
+                  _formatTime(_elapsed),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleMedium?.copyWith(fontSize: 48),
+                ),
+                const SizedBox(height: 24),
+                Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 340),
+                    child: _TrainingProgressRing(
+                      stages: _trainer.stages,
+                      totalElapsedSeconds: _trainer.totalElapsedSeconds,
+                      totalDurationSeconds: totalDuration,
+                      currentStageIndex: _trainer.currentStageIndex,
+                      dimmed: isPaused,
+                      child: _BpmDisplay(
+                        bpm: _bpm,
+                        target: stage.target,
+                        dimmed: isPaused,
+                      ),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 32),
-              _StageCard(
-                stage: stage,
-                elapsed: _trainer.stageElapsedSeconds,
-                progress: stageProgress,
-                target: stage.target,
-              ),
-              const SizedBox(height: 32),
-              SizedBox(
-                width: double.infinity,
-                child: isPaused
-                    ? FilledButton.icon(
-                        onPressed: () => setState(() => _trainer.resume()),
-                        icon: const Icon(Icons.play_arrow),
-                        label: const Text('Resume'),
-                      )
-                    : OutlinedButton.icon(
-                        onPressed: () => _trainer.pause(),
-                        icon: const Icon(Icons.pause),
-                        label: const Text('Pause'),
+                const SizedBox(height: 32),
+                _StageCard(
+                  stage: stage,
+                  elapsed: _trainer.stageElapsedSeconds,
+                  progress: stageProgress,
+                  target: stage.target,
+                ),
+                const SizedBox(height: 32),
+                SizedBox(
+                  width: double.infinity,
+                  child: isPaused
+                      ? FilledButton.icon(
+                          onPressed: () => setState(() => _trainer.resume()),
+                          icon: const Icon(Icons.play_arrow),
+                          label: const Text('Resume'),
+                        )
+                      : OutlinedButton.icon(
+                          onPressed: () => _trainer.pause(),
+                          icon: const Icon(Icons.pause),
+                          label: const Text('Pause'),
+                        ),
+                ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    IconButton(
+                      icon: Icon(
+                        _beepsEnabled ? Icons.music_note : Icons.music_off,
                       ),
-              ),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  IconButton(
-                    icon: Icon(_beepsEnabled ? Icons.music_note : Icons.music_off),
-                    tooltip: _beepsEnabled ? 'Mute beeps' : 'Unmute beeps',
-                    onPressed: () {
-                      setState(() {
-                        _beepsEnabled = !_beepsEnabled;
-                        _audio.beepsEnabled = _beepsEnabled;
-                      });
-                      _showToast(_beepsEnabled ? 'Beeps on' : 'Beeps off');
-                    },
-                  ),
-                  IconButton(
-                    icon: Icon(_ttsEnabled ? Icons.record_voice_over : Icons.voice_over_off),
-                    tooltip: _ttsEnabled ? 'Mute voice' : 'Unmute voice',
-                    onPressed: () {
-                      setState(() {
-                        _ttsEnabled = !_ttsEnabled;
-                        _audio.ttsEnabled = _ttsEnabled;
-                      });
-                      _showToast(_ttsEnabled ? 'Voice on' : 'Voice off');
-                    },
-                  ),
-                  IconButton(
-                    icon: Icon(_keepDisplayOn ? Icons.visibility : Icons.visibility_off),
-                    tooltip: _keepDisplayOn ? 'Allow screen lock' : 'Keep screen on',
-                    onPressed: () async {
-                      setState(() => _keepDisplayOn = !_keepDisplayOn);
-                      if (_keepDisplayOn) {
-                        await WakelockPlus.enable();
-                        _showToast('Screen will stay on');
-                      } else {
-                        await WakelockPlus.disable();
-                        _showToast('Screen lock enabled');
-                      }
-                    },
-                  ),
-                ],
-              ),
-            ],
+                      tooltip: _beepsEnabled ? 'Mute beeps' : 'Unmute beeps',
+                      onPressed: () {
+                        setState(() {
+                          _beepsEnabled = !_beepsEnabled;
+                          _audio.beepsEnabled = _beepsEnabled;
+                        });
+                        _showToast(_beepsEnabled ? 'Beeps on' : 'Beeps off');
+                      },
+                    ),
+                    IconButton(
+                      icon: Icon(
+                        _speedCueEnabled
+                            ? Icons.mobiledata
+                            : Icons.mobiledata_off,
+                      ),
+                      tooltip: _speedCueEnabled
+                          ? 'Mute speed cues'
+                          : 'Unmute speed cues',
+                      onPressed: () {
+                        setState(() {
+                          _speedCueEnabled = !_speedCueEnabled;
+                          _audio.speedCueEnabled = _speedCueEnabled;
+                        });
+                        _showToast(
+                          _speedCueEnabled ? 'Speed cues on' : 'Speed cues off',
+                        );
+                      },
+                    ),
+                    IconButton(
+                      icon: Icon(
+                        _ttsEnabled
+                            ? Icons.record_voice_over
+                            : Icons.voice_over_off,
+                      ),
+                      tooltip: _ttsEnabled
+                          ? 'Mute voice prompts'
+                          : 'Unmute voice prompts',
+                      onPressed: () {
+                        setState(() {
+                          _ttsEnabled = !_ttsEnabled;
+                          _audio.ttsEnabled = _ttsEnabled;
+                        });
+                        _showToast(
+                          _ttsEnabled
+                              ? 'Voice prompts on'
+                              : 'Voice prompts off',
+                        );
+                      },
+                    ),
+                    IconButton(
+                      icon: Icon(
+                        _keepDisplayOn
+                            ? Icons.visibility
+                            : Icons.visibility_off,
+                      ),
+                      tooltip: _keepDisplayOn
+                          ? 'Allow screen lock'
+                          : 'Keep screen on',
+                      onPressed: () async {
+                        setState(() => _keepDisplayOn = !_keepDisplayOn);
+                        if (_keepDisplayOn) {
+                          await WakelockPlus.enable();
+                          _showToast('Screen will stay on');
+                        } else {
+                          await WakelockPlus.disable();
+                          _showToast('Screen lock enabled');
+                        }
+                      },
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
-    ),
-  );
+    );
   }
 }
 
@@ -509,7 +604,11 @@ class _BpmDisplay extends StatelessWidget {
   final StageTarget target;
   final bool dimmed;
 
-  const _BpmDisplay({required this.bpm, required this.target, this.dimmed = false});
+  const _BpmDisplay({
+    required this.bpm,
+    required this.target,
+    this.dimmed = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -521,15 +620,24 @@ class _BpmDisplay extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text('$bpm',
-            style: TextStyle(
-                fontSize: 72, fontWeight: FontWeight.bold, color: color, height: 1.0)),
-        Text('BPM',
-            style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 2,
-                color: color.withValues(alpha: dimmed ? 0.4 : 0.7))),
+        Text(
+          '$bpm',
+          style: TextStyle(
+            fontSize: 72,
+            fontWeight: FontWeight.bold,
+            color: color,
+            height: 1.0,
+          ),
+        ),
+        Text(
+          'BPM',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 2,
+            color: color.withValues(alpha: dimmed ? 0.4 : 0.7),
+          ),
+        ),
       ],
     );
   }
@@ -635,8 +743,10 @@ class _ProgressRingPainter extends CustomPainter {
     canvas.drawCircle(center, radius, trackPaint);
 
     // Progress arc.
-    final fraction =
-        (totalElapsedSeconds / totalDurationSeconds).clamp(0.0, 1.0);
+    final fraction = (totalElapsedSeconds / totalDurationSeconds).clamp(
+      0.0,
+      1.0,
+    );
     if (fraction > 0) {
       final progressPaint = Paint()
         ..style = PaintingStyle.stroke
@@ -741,7 +851,12 @@ class _StageCard extends StatelessWidget {
   final double progress;
   final StageTarget target;
 
-  const _StageCard({required this.stage, required this.elapsed, required this.progress, required this.target});
+  const _StageCard({
+    required this.stage,
+    required this.elapsed,
+    required this.progress,
+    required this.target,
+  });
 
   String _fmt(int s) {
     final m = s ~/ 60;
@@ -761,10 +876,15 @@ class _StageCard extends StatelessWidget {
             const SizedBox(height: 4),
             Text(target.label, style: Theme.of(context).textTheme.bodyMedium),
             const SizedBox(height: 8),
-            LinearProgressIndicator(value: progress.clamp(0.0, 1.0), minHeight: 8),
+            LinearProgressIndicator(
+              value: progress.clamp(0.0, 1.0),
+              minHeight: 8,
+            ),
             const SizedBox(height: 8),
-            Text('${_fmt(elapsed)} / ${_fmt(stage.durationSeconds)}',
-                style: Theme.of(context).textTheme.bodyMedium),
+            Text(
+              '${_fmt(elapsed)} / ${_fmt(stage.durationSeconds)}',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
           ],
         ),
       ),
